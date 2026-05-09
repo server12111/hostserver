@@ -247,11 +247,15 @@ async def admin_receive_worker_secret(update: Update, context: ContextTypes.DEFA
     await update.message.reply_text("⏳ Проверяю подключение...")
     h = await wc.health(test_worker)
     if not h.get("ok"):
+        error_detail = h.get("error", "неизвестная ошибка")
         await update.message.reply_text(
-            "❌ Воркер недоступен или неверный секрет.\n\nПроверьте:\n"
+            f"❌ Воркер недоступен.\n\n"
+            f"Ошибка: <code>{error_detail}</code>\n\n"
+            "Проверьте:\n"
             "• URL доступен из интернета\n"
             "• WORKER_SECRET совпадает\n"
             "• worker_api.py запущен",
+            parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("🖥 Воркеры", callback_data="admin_workers")]
             ]),

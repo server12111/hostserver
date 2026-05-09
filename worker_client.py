@@ -20,9 +20,9 @@ async def health(worker: dict) -> dict:
                             timeout=aiohttp.ClientTimeout(total=5))
             if r.status == 200:
                 return await r.json()
-    except Exception:
-        pass
-    return {}
+            return {"ok": False, "error": f"HTTP {r.status}"}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
 
 
 async def deploy_zip(worker: dict, bot_name: str, zip_bytes: bytes,
@@ -112,7 +112,7 @@ async def resources(worker: dict) -> list[dict]:
             r = await s.get(_url(worker, "/resources"),
                             headers=_headers(worker), timeout=_TIMEOUT_SHORT)
             data = await r.json()
-            return data.get("resources", [])
+            return data if isinstance(data, list) else data.get("resources", [])
     except Exception:
         return []
 

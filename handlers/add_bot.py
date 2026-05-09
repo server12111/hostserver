@@ -172,21 +172,30 @@ async def _pick_worker(context) -> dict | None:
     return min(online, key=lambda w: w["_bots"])
 
 
-# ─── Нотификации о загрузке воркера ──────────────────────────────────────────
-async def _notify_worker_load(context, worker: dict, bots_before: int, bots_after: int):
+# ─── Нотификации об общей загрузке всех воркеров ─────────────────────────────
+async def _notify_global_load(context, bots_before: int):
     admin_ids = context.bot_data.get("admin_ids", set())
-    if not admin_ids:
+    wr = context.bot_data.get("worker_registry")
+    if not admin_ids or not wr:
         return
+    workers = wr.list_workers()
+    if not workers:
+        return
+    registry = context.bot_data["registry"]
+    total_capacity = len(workers) * MAX_BOTS_PER_WORKER
+    total_bots = sum(len(registry.list_bots_by_worker(w["id"])) for w in workers)
+    bots_after = total_bots
     thresholds = [50, 75] + list(range(80, 101, 10))
     crossed = [
         t for t in thresholds
-        if bots_before / MAX_BOTS_PER_WORKER * 100 < t <= bots_after / MAX_BOTS_PER_WORKER * 100
+        if bots_before / total_capacity * 100 < t <= bots_after / total_capacity * 100
     ]
     for t in crossed:
         emoji = "🔴" if t >= 90 else "🟡" if t >= 75 else "🟠"
         text = (
-            f"{emoji} <b>Воркер {worker['label']}</b> заполнен на <b>{t}%</b>\n"
-            f"Ботов: <b>{bots_after}/{MAX_BOTS_PER_WORKER}</b>"
+            f"{emoji} <b>Загальне заповнення воркерів: {t}%</b>\n"
+            f"Ботів: <b>{bots_after}/{total_capacity}</b> "
+            f"({len(workers)} воркерів × {MAX_BOTS_PER_WORKER})"
         )
         for admin_id in admin_ids:
             try:
@@ -228,13 +237,16 @@ async def _finalize_bot(
             )
             return ConversationHandler.END
 
+        wr = context.bot_data.get("worker_registry")
+        all_workers = wr.list_workers() if wr else []
+        bots_before_global = sum(len(registry.list_bots_by_worker(w["id"])) for w in all_workers)
         registry.add_bot(
             bot_name, "", entry_point,
             owner_id=user_id, display_name=display_name,
             source=source, git_url=git_url, worker_id=chosen_worker["id"],
         )
         user_registry.add_bot_to_user(user_id, bot_name)
-        await _notify_worker_load(context, chosen_worker, chosen_worker["_bots"], chosen_worker["_bots"] + 1)
+        await _notify_global_load(context, bots_before_global)
         await status_msg.edit_text(
             f"✅ Бот <b>{display_name}</b> задеплоен на <b>{chosen_worker['label']}</b>!\n"
             f"Точка входа: <code>{entry_point}</code>",
@@ -248,70 +260,14 @@ async def _finalize_bot(
         )
         return ConversationHandler.END
 
-    # ── Локальный деплой (fallback) ────────────────────────────────────────────
-    bot_path = os.path.abspath(os.path.join(BOTS_DIR, bot_name))
-
-    if source == "zip":
-        os.makedirs(bot_path, exist_ok=True)
-        zip_temp = os.path.join(bot_path, "_upload.zip")
-        try:
-            with open(zip_temp, "wb") as f:
-                f.write(zip_bytes)
-            with zipfile.ZipFile(zip_temp) as zf:
-                for member in zf.namelist():
-                    if ".." in member or os.path.isabs(member):
-                        shutil.rmtree(bot_path, ignore_errors=True)
-                        await status_msg.edit_text(f"❌ Небезопасный путь в ZIP: {member}")
-                        return ConversationHandler.END
-                zf.extractall(bot_path)
-        except zipfile.BadZipFile:
-            shutil.rmtree(bot_path, ignore_errors=True)
-            await status_msg.edit_text("❌ Файл не является корректным ZIP-архивом.")
-            return ConversationHandler.END
-        finally:
-            if os.path.exists(zip_temp):
-                os.remove(zip_temp)
-    else:
-        ok, err = await asyncio.to_thread(_git_clone, git_url, bot_path)
-        if not ok:
-            shutil.rmtree(bot_path, ignore_errors=True)
-            await status_msg.edit_text(
-                f"❌ Ошибка клонирования:\n<code>{err[:400]}</code>", parse_mode="HTML"
-            )
-            return ConversationHandler.END
-
-    entry_point = _find_entry_point(bot_path)
-    if not entry_point:
-        shutil.rmtree(bot_path, ignore_errors=True)
-        await status_msg.edit_text(
-            "❌ Не найдено <code>main.py</code> или <code>bot.py</code>.", parse_mode="HTML"
-        )
-        return ConversationHandler.END
-
-    registry.add_bot(
-        bot_name, bot_path, entry_point,
-        owner_id=user_id, display_name=display_name,
-        source=source, git_url=git_url,
-    )
-    user_registry.add_bot_to_user(user_id, bot_name)
-
+    # ── Всі воркери заповнені або недоступні ─────────────────────────────────
     await status_msg.edit_text(
-        f"📦 Бот <b>{display_name}</b> загружен локально.\n⚙️ Устанавливаю зависимости...",
+        "❌ <b>Немає доступних воркерів</b>\n\n"
+        "Всі сервери заповнені або недоступні.\n"
+        "Зверніться до адміністратора.",
         parse_mode="HTML",
-    )
-    ok, msg = await manager.provision_bot(bot_name, bot_path)
-    result_text = (
-        f"✅ Бот <b>{display_name}</b> готов!\nТочка входа: <code>{entry_point}</code>"
-        if ok else
-        f"⚠️ Бот загружен, но есть проблемы с зависимостями:\n<code>{msg}</code>"
-    )
-    await status_msg.edit_text(
-        result_text, parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("▶️ Запустить", callback_data=f"start_bot:{bot_name}"),
-                InlineKeyboardButton("🤖 Мои боты", callback_data="my_bots"),
-            ]
+            [InlineKeyboardButton("🔙 Назад", callback_data="menu")]
         ]),
     )
     return ConversationHandler.END

@@ -13,6 +13,7 @@ import worker_client
 WAITING_ZIP = 1
 WAITING_GIT_URL = 2
 BOTS_DIR = "bots"
+MAX_BOTS_PER_WORKER = 5
 
 
 def _is_admin(user_id: int, context) -> bool:
@@ -165,9 +166,33 @@ async def _pick_worker(context) -> dict | None:
             w = dict(w)
             w["_bots"] = len(registry.list_bots_by_worker(w["id"]))
             online.append(w)
+    online = [w for w in online if w["_bots"] < MAX_BOTS_PER_WORKER]
     if not online:
         return None
     return min(online, key=lambda w: w["_bots"])
+
+
+# ─── Нотификации о загрузке воркера ──────────────────────────────────────────
+async def _notify_worker_load(context, worker: dict, bots_before: int, bots_after: int):
+    admin_ids = context.bot_data.get("admin_ids", set())
+    if not admin_ids:
+        return
+    thresholds = [50, 75] + list(range(80, 101, 10))
+    crossed = [
+        t for t in thresholds
+        if bots_before / MAX_BOTS_PER_WORKER * 100 < t <= bots_after / MAX_BOTS_PER_WORKER * 100
+    ]
+    for t in crossed:
+        emoji = "🔴" if t >= 90 else "🟡" if t >= 75 else "🟠"
+        text = (
+            f"{emoji} <b>Воркер {worker['label']}</b> заполнен на <b>{t}%</b>\n"
+            f"Ботов: <b>{bots_after}/{MAX_BOTS_PER_WORKER}</b>"
+        )
+        for admin_id in admin_ids:
+            try:
+                await context.bot.send_message(admin_id, text, parse_mode="HTML")
+            except Exception:
+                pass
 
 
 # ─── Финализация (общий код ZIP и Git) ────────────────────────────────────────
@@ -209,6 +234,7 @@ async def _finalize_bot(
             source=source, git_url=git_url, worker_id=chosen_worker["id"],
         )
         user_registry.add_bot_to_user(user_id, bot_name)
+        await _notify_worker_load(context, chosen_worker, chosen_worker["_bots"], chosen_worker["_bots"] + 1)
         await status_msg.edit_text(
             f"✅ Бот <b>{display_name}</b> задеплоен на <b>{chosen_worker['label']}</b>!\n"
             f"Точка входа: <code>{entry_point}</code>",

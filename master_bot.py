@@ -23,30 +23,35 @@ from telegram.ext import (
 
 from bot_manager import BotManager
 from registry import RegistryManager
+from user_registry import UserRegistry
+
 from handlers.start import start_handler
 from handlers.my_bots import my_bots_handler, bot_info_handler
-from handlers.add_bot import add_bot_entry, receive_zip, non_zip_handler, cancel_add_bot, WAITING_ZIP
+from handlers.add_bot import (
+    add_bot_entry, add_zip_entry, add_git_entry,
+    receive_zip, receive_git_url, non_zip_handler, cancel_add_bot,
+    WAITING_ZIP, WAITING_GIT_URL,
+)
 from handlers.bot_actions import (
-    start_bot_handler,
-    stop_bot_handler,
-    delete_bot_handler,
-    confirm_delete_handler,
-    logs_handler,
-    packages_entry_handler,
-    packages_install_handler,
-    cancel_packages,
-    WAITING_PACKAGES,
-    config_view_handler,
-    config_edit_entry,
-    config_save_handler,
-    cancel_config,
-    WAITING_CONFIG,
+    start_bot_handler, stop_bot_handler,
+    delete_bot_handler, confirm_delete_handler, logs_handler,
+    config_view_handler, config_edit_entry, config_save_handler, cancel_config,
+    packages_entry_handler, packages_install_handler, cancel_packages,
+    WAITING_PACKAGES, WAITING_CONFIG,
+)
+from handlers.files import files_list_handler, download_file_handler
+from handlers.payment import (
+    balance_handler, plans_handler, buy_plan_handler, pay_currency_handler,
+)
+from handlers.admin import (
+    admin_command_handler, admin_users_handler, admin_bots_handler,
+    admin_resources_handler, admin_user_detail_handler,
 )
 
 load_dotenv()
 TOKEN = os.getenv("BOT_TOKEN")
 if not TOKEN:
-    raise RuntimeError("BOT_TOKEN не знайдено. Створіть файл .env з BOT_TOKEN=...")
+    raise RuntimeError("BOT_TOKEN не найден. Создайте файл .env с BOT_TOKEN=...")
 
 ADMIN_IDS: set[int] = set()
 for _part in os.getenv("ADMIN_IDS", "").split(","):
@@ -58,25 +63,30 @@ for _part in os.getenv("ADMIN_IDS", "").split(","):
 async def admin_guard(update: Update, context) -> None:
     user = update.effective_user
     if ADMIN_IDS and (user is None or user.id not in ADMIN_IDS):
-        if update.callback_query:
-            await update.callback_query.answer("⛔ Доступ заборонено.", show_alert=True)
-        elif update.message:
-            await update.message.reply_text("⛔ У вас немає доступу до цього бота.")
-        raise ApplicationHandlerStop
+        # Не блокируем всех — только регистрируем
+        pass
 
 
 async def post_init(application: Application) -> None:
     registry = RegistryManager()
     registry.restore_running_bots()
     manager = BotManager(registry)
+    user_registry = UserRegistry()
     application.bot_data["registry"] = registry
     application.bot_data["manager"] = manager
+    application.bot_data["user_registry"] = user_registry
+    application.bot_data["admin_ids"] = ADMIN_IDS
 
 
 async def post_shutdown(application: Application) -> None:
     manager = application.bot_data.get("manager")
     if manager:
         manager.stop_all()
+
+
+async def error_handler(update, context) -> None:
+    import logging
+    logging.getLogger(__name__).error("Exception:", exc_info=context.error)
 
 
 def build_app() -> Application:
@@ -88,22 +98,26 @@ def build_app() -> Application:
         .build()
     )
 
-    # Admin guard fires before every other handler
-    app.add_handler(TypeHandler(Update, admin_guard), group=-1)
-
-    add_bot_conversation = ConversationHandler(
+    # ── ConversationHandler: добавление бота ──────────────────────────────────
+    add_bot_conv = ConversationHandler(
         entry_points=[CallbackQueryHandler(add_bot_entry, pattern="^add_bot$")],
         states={
             WAITING_ZIP: [
+                CallbackQueryHandler(add_zip_entry, pattern="^add_zip$"),
+                CallbackQueryHandler(add_git_entry, pattern="^add_git$"),
                 MessageHandler(filters.Document.ZIP, receive_zip),
                 MessageHandler(filters.Document.ALL & ~filters.Document.ZIP, non_zip_handler),
+            ],
+            WAITING_GIT_URL: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, receive_git_url),
             ],
         },
         fallbacks=[CallbackQueryHandler(cancel_add_bot, pattern="^menu$")],
         per_message=False,
     )
 
-    packages_conversation = ConversationHandler(
+    # ── ConversationHandler: пакеты ───────────────────────────────────────────
+    packages_conv = ConversationHandler(
         entry_points=[CallbackQueryHandler(packages_entry_handler, pattern="^packages:")],
         states={
             WAITING_PACKAGES: [
@@ -114,7 +128,8 @@ def build_app() -> Application:
         per_message=False,
     )
 
-    config_conversation = ConversationHandler(
+    # ── ConversationHandler: конфиг ───────────────────────────────────────────
+    config_conv = ConversationHandler(
         entry_points=[CallbackQueryHandler(config_edit_entry, pattern="^edit_config:")],
         states={
             WAITING_CONFIG: [
@@ -125,31 +140,48 @@ def build_app() -> Application:
         per_message=False,
     )
 
-    app.add_handler(add_bot_conversation)
-    app.add_handler(packages_conversation)
-    app.add_handler(config_conversation)
-    app.add_handler(CallbackQueryHandler(config_view_handler, pattern="^config:"))
+    app.add_handler(add_bot_conv)
+    app.add_handler(packages_conv)
+    app.add_handler(config_conv)
+
+    # ── Команды ───────────────────────────────────────────────────────────────
     app.add_handler(CommandHandler("start", start_handler))
+    app.add_handler(CommandHandler("admin", admin_command_handler))
+
+    # ── Главное меню ──────────────────────────────────────────────────────────
     app.add_handler(CallbackQueryHandler(start_handler, pattern="^menu$"))
     app.add_handler(CallbackQueryHandler(my_bots_handler, pattern="^my_bots$"))
     app.add_handler(CallbackQueryHandler(bot_info_handler, pattern="^bot_info:"))
+
+    # ── Действия с ботом ──────────────────────────────────────────────────────
     app.add_handler(CallbackQueryHandler(start_bot_handler, pattern="^start_bot:"))
     app.add_handler(CallbackQueryHandler(stop_bot_handler, pattern="^stop_bot:"))
     app.add_handler(CallbackQueryHandler(delete_bot_handler, pattern="^delete:"))
     app.add_handler(CallbackQueryHandler(confirm_delete_handler, pattern="^confirm_del:"))
     app.add_handler(CallbackQueryHandler(logs_handler, pattern="^logs:"))
+    app.add_handler(CallbackQueryHandler(config_view_handler, pattern="^config:"))
+    app.add_handler(CallbackQueryHandler(files_list_handler, pattern="^files:"))
+    app.add_handler(CallbackQueryHandler(download_file_handler, pattern="^dl_file:"))
+
+    # ── Оплата ────────────────────────────────────────────────────────────────
+    app.add_handler(CallbackQueryHandler(balance_handler, pattern="^balance$"))
+    app.add_handler(CallbackQueryHandler(plans_handler, pattern="^plans$"))
+    app.add_handler(CallbackQueryHandler(buy_plan_handler, pattern="^buy_plan:"))
+    app.add_handler(CallbackQueryHandler(pay_currency_handler, pattern="^pay_currency:"))
+
+    # ── Админ-панель ──────────────────────────────────────────────────────────
+    app.add_handler(CallbackQueryHandler(admin_command_handler, pattern="^admin_menu$"))
+    app.add_handler(CallbackQueryHandler(admin_users_handler, pattern="^admin_users$"))
+    app.add_handler(CallbackQueryHandler(admin_bots_handler, pattern="^admin_bots$"))
+    app.add_handler(CallbackQueryHandler(admin_resources_handler, pattern="^admin_resources$"))
+    app.add_handler(CallbackQueryHandler(admin_user_detail_handler, pattern="^admin_user:"))
+
     app.add_error_handler(error_handler)
-
     return app
-
-
-async def error_handler(update, context) -> None:
-    import logging
-    logging.getLogger(__name__).error("Exception:", exc_info=context.error)
 
 
 if __name__ == "__main__":
     application = build_app()
-    ids_str = ", ".join(str(i) for i in ADMIN_IDS) if ADMIN_IDS else "всі (не обмежено)"
-    print(f"Bot Manager запущено. Адміни: {ids_str}. Ctrl+C для зупинки.")
+    ids_str = ", ".join(str(i) for i in ADMIN_IDS) if ADMIN_IDS else "не ограничено"
+    print(f"Bot Hosting запущен. Админы: {ids_str}. Ctrl+C для остановки.")
     application.run_polling(allowed_updates=Update.ALL_TYPES)

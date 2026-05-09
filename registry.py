@@ -14,7 +14,7 @@ class RegistryManager:
 
     def _load(self):
         if os.path.exists(REGISTRY_FILE):
-            with open(REGISTRY_FILE, "r", encoding="utf-8") as f:
+            with open(REGISTRY_FILE, encoding="utf-8") as f:
                 self._data = json.load(f)
 
     def _save(self):
@@ -25,12 +25,18 @@ class RegistryManager:
         with self._lock:
             return name in self._data["bots"]
 
-    def add_bot(self, name: str, path: str, entry_point: str):
+    def add_bot(self, name: str, path: str, entry_point: str,
+                owner_id: int = 0, display_name: str = "",
+                source: str = "zip", git_url: str = None):
         with self._lock:
             self._data["bots"][name] = {
                 "name": name,
+                "display_name": display_name or name,
+                "owner_id": owner_id,
                 "path": path,
                 "entry_point": entry_point,
+                "source": source,
+                "git_url": git_url,
                 "added_at": datetime.now().isoformat(timespec="seconds"),
                 "status": "stopped",
                 "pid": None,
@@ -56,6 +62,11 @@ class RegistryManager:
     def list_bots(self) -> list[dict]:
         with self._lock:
             return list(self._data["bots"].values())
+
+    def list_bots_by_owner(self, owner_id: int) -> list[dict]:
+        with self._lock:
+            return [b for b in self._data["bots"].values()
+                    if b.get("owner_id") == owner_id]
 
     def restore_running_bots(self):
         with self._lock:

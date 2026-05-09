@@ -7,7 +7,15 @@ import threading
 from collections import deque
 from dataclasses import dataclass, field
 
+try:
+    import psutil
+    _PSUTIL = True
+except ImportError:
+    _PSUTIL = False
+
 from registry import RegistryManager
+
+BOTS_DIR = "bots"
 
 
 @dataclass
@@ -32,9 +40,34 @@ class BotManager:
     def get_logs(self, name: str, n: int = 30) -> str:
         bp = self._processes.get(name)
         if bp is None:
-            return "(немає логів)"
+            return "(нет логов)"
         lines = list(bp.log_buffer)
-        return "\n".join(lines[-n:]) if lines else "(порожньо)"
+        return "\n".join(lines[-n:]) if lines else "(пусто)"
+
+    def get_resources(self, name: str) -> dict:
+        if not _PSUTIL:
+            return {"cpu": 0.0, "ram_mb": 0.0}
+        bp = self._processes.get(name)
+        if bp is None or not bp.is_running():
+            return {"cpu": 0.0, "ram_mb": 0.0}
+        try:
+            proc = psutil.Process(bp.process.pid)
+            return {
+                "cpu": proc.cpu_percent(interval=0.1),
+                "ram_mb": round(proc.memory_info().rss / 1024 / 1024, 1),
+            }
+        except psutil.NoSuchProcess:
+            return {"cpu": 0.0, "ram_mb": 0.0}
+
+    def get_all_resources(self) -> list[dict]:
+        result = []
+        for name, bp in self._processes.items():
+            if bp.is_running():
+                res = self.get_resources(name)
+                bot = self._registry.get_bot(name)
+                display = bot.get("display_name", name) if bot else name
+                result.append({"name": name, "display": display, **res})
+        return result
 
     @staticmethod
     def _venv_python(bot_path: str) -> str:
@@ -51,26 +84,20 @@ class BotManager:
     def _provision_blocking(self, name: str, bot_path: str) -> tuple[bool, str]:
         venv_dir = os.path.join(bot_path, "venv")
         try:
-            subprocess.run(
-                [sys.executable, "-m", "venv", venv_dir],
-                check=True, capture_output=True,
-            )
+            subprocess.run([sys.executable, "-m", "venv", venv_dir],
+                           check=True, capture_output=True)
             pip = self._venv_pip(bot_path)
-            subprocess.run(
-                [pip, "install", "--upgrade", "pip"],
-                check=True, capture_output=True, timeout=120,
-            )
+            subprocess.run([pip, "install", "--upgrade", "pip"],
+                           check=True, capture_output=True, timeout=120)
             req_file = os.path.join(bot_path, "requirements.txt")
             if os.path.exists(req_file):
-                subprocess.run(
-                    [pip, "install", "-r", req_file],
-                    check=True, capture_output=True, timeout=300,
-                )
+                subprocess.run([pip, "install", "-r", req_file],
+                               check=True, capture_output=True, timeout=300)
             self._registry.update_bot(name, provisioned=True)
-            return True, "Залежності встановлено"
+            return True, "Зависимости установлены"
         except subprocess.CalledProcessError as e:
             err = (e.stderr or b"").decode("utf-8", errors="replace")
-            return False, f"Помилка при встановленні: {err[:500]}"
+            return False, f"Ошибка установки: {err[:500]}"
         except Exception as e:
             return False, str(e)
 
@@ -80,17 +107,15 @@ class BotManager:
     def _install_packages_blocking(self, bot_path: str, packages: list[str]) -> tuple[bool, str]:
         pip = self._venv_pip(bot_path)
         if not os.path.exists(pip):
-            return False, "venv не знайдено — спочатку перевстановіть бота"
+            return False, "venv не найден — переустановите бота"
         try:
-            result = subprocess.run(
-                [pip, "install"] + packages,
-                capture_output=True, timeout=300,
-            )
+            result = subprocess.run([pip, "install"] + packages,
+                                    capture_output=True, timeout=300)
             out = result.stdout.decode("utf-8", errors="replace")
             err = result.stderr.decode("utf-8", errors="replace")
             if result.returncode != 0:
                 return False, (err or out)[:600]
-            return True, f"Встановлено: {', '.join(packages)}"
+            return True, f"Установлено: {', '.join(packages)}"
         except Exception as e:
             return False, str(e)
 
@@ -99,16 +124,15 @@ class BotManager:
 
     def start_bot(self, name: str) -> tuple[bool, str]:
         if self.is_running(name):
-            return False, "Бот вже запущений"
+            return False, "Бот уже запущен"
         bot = self._registry.get_bot(name)
         if not bot:
-            return False, "Бот не знайдений"
+            return False, "Бот не найден"
         bot_path = bot["path"]
-        entry = bot["entry_point"]
         python_exe = self._venv_python(bot_path)
         if not os.path.exists(python_exe):
             python_exe = sys.executable
-        entry_abs = os.path.join(bot_path, entry)
+        entry_abs = os.path.join(bot_path, bot["entry_point"])
         try:
             env = os.environ.copy()
             env_file = os.path.join(bot_path, ".env")
@@ -134,7 +158,7 @@ class BotManager:
             self._processes[name] = bp
             self._start_log_reader(bp)
             self._registry.update_bot(name, status="running", pid=process.pid)
-            return True, f"Бот запущено (PID {process.pid})"
+            return True, f"Бот запущен (PID {process.pid})"
         except Exception as e:
             return False, str(e)
 
@@ -142,7 +166,6 @@ class BotManager:
         def reader():
             for raw in iter(bp.process.stdout.readline, b""):
                 bp.log_buffer.append(raw.decode("utf-8", errors="replace").rstrip())
-
         bp.reader_thread = threading.Thread(target=reader, daemon=True)
         bp.reader_thread.start()
 
@@ -150,7 +173,7 @@ class BotManager:
         bp = self._processes.get(name)
         if bp is None or not bp.is_running():
             self._registry.update_bot(name, status="stopped", pid=None)
-            return False, "Бот не запущений"
+            return False, "Бот не запущен"
         try:
             bp.process.terminate()
             try:
@@ -158,7 +181,7 @@ class BotManager:
             except subprocess.TimeoutExpired:
                 bp.process.kill()
             self._registry.update_bot(name, status="stopped", pid=None)
-            return True, "Бот зупинено"
+            return True, "Бот остановлен"
         except Exception as e:
             return False, str(e)
 
@@ -167,14 +190,13 @@ class BotManager:
         self._processes.pop(name, None)
         bot = self._registry.get_bot(name)
         if bot:
-            bot_path = bot["path"]
             try:
-                if os.path.exists(bot_path):
-                    shutil.rmtree(bot_path)
+                if os.path.exists(bot["path"]):
+                    shutil.rmtree(bot["path"])
             except Exception as e:
-                return False, f"Помилка видалення файлів: {e}"
+                return False, f"Ошибка удаления файлов: {e}"
         self._registry.remove_bot(name)
-        return True, "Бот видалено"
+        return True, "Бот удалён"
 
     def stop_all(self):
         for name in list(self._processes.keys()):

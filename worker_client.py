@@ -2,7 +2,7 @@ import aiohttp
 
 _TIMEOUT_SHORT = aiohttp.ClientTimeout(total=10)
 _TIMEOUT_LONG = aiohttp.ClientTimeout(total=300)
-_TIMEOUT_DEPLOY = aiohttp.ClientTimeout(total=120)
+_TIMEOUT_DEPLOY = aiohttp.ClientTimeout(total=600)
 
 
 def _url(worker: dict, path: str) -> str:

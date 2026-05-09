@@ -10,27 +10,31 @@ from payments import (
     get_ton_amount, make_ton_comment, poll_ton_payment, check_ton_payment_once,
 )
 
+_SEP = "━━━━━━━━━━━━━━━"
+
 
 async def balance_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     user_id = query.from_user.id
+    username = query.from_user.username or str(user_id)
     user_registry = context.bot_data["user_registry"]
     u = user_registry.get_user(user_id)
     if not u:
         await query.edit_message_text("❌ Пользователь не найден.")
         return
 
-    plan_name = PLANS.get(u.get("plan", ""), {}).get("name", "—") if u.get("plan") else "—"
     sub_status = user_registry.subscription_status(user_id)
-    max_bots = u.get("max_bots", 0)
+    slots = u.get("max_bots", 0)
     bots_count = len(u.get("bots", []))
 
     await query.edit_message_text(
-        f"💰 <b>Ваш аккаунт</b>\n\n"
-        f"Тариф: <b>{plan_name}</b>\n"
-        f"Подписка: <b>{sub_status}</b>\n"
-        f"Ботов: <b>{bots_count} / {max_bots}</b>",
+        f"🖥 <b>Мой хостинг</b>\n"
+        f"{_SEP}\n"
+        f"👤 @{username}\n"
+        f"🤖 Слотов: <b>{slots}</b>  |  Ботов: <b>{bots_count} / {slots}</b>\n"
+        f"📅 {sub_status}\n"
+        f"{_SEP}",
         parse_mode="HTML",
         reply_markup=balance_keyboard(),
     )
@@ -39,11 +43,20 @@ async def balance_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def plans_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    text = "📦 <b>Выберите тариф:</b>\n\n"
-    for key, plan in PLANS.items():
-        text += f"• <b>{plan['name']}</b> — {plan['bots']} бот(ов), {plan['price']} USDT / {plan['days']} дней\n"
+    lines = [
+        f"🖥 <b>Хостинг для Python-бота</b>\n{_SEP}",
+        f"▸ 1 бот · 30 дней · +1 слот за покупку\n{_SEP}",
+    ]
+    for plan in PLANS.values():
+        lines.append(
+            f"💾 <b>{plan['ram']} RAM</b> — {plan['price']} USDT\n"
+            f"   📁 Диск: {plan['disk']}"
+        )
+    lines.append(_SEP)
     await query.edit_message_text(
-        text, parse_mode="HTML", reply_markup=plans_keyboard()
+        "\n".join(lines),
+        parse_mode="HTML",
+        reply_markup=plans_keyboard(),
     )
 
 
@@ -52,13 +65,18 @@ async def buy_plan_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     plan_key = query.data.split(":", 1)[1]
     if plan_key not in PLANS:
-        await query.answer("❌ Тариф не найден.", show_alert=True)
+        await query.answer("❌ Хостинг не найден.", show_alert=True)
         return
     plan = PLANS[plan_key]
     context.user_data["selected_plan"] = plan_key
     await query.edit_message_text(
-        f"💳 <b>{plan['name']}</b> — {plan['price']} USDT / {plan['days']} дней\n\n"
-        "Выберите валюту для оплаты:",
+        f"💳 <b>Оплата хостинга</b>\n"
+        f"{_SEP}\n"
+        f"▸ 1 бот · {plan['ram']} RAM · {plan['disk']} диск\n"
+        f"▸ Срок: {plan['days']} дней\n"
+        f"▸ Сумма: <b>{plan['price']} USDT</b>\n"
+        f"{_SEP}\n"
+        f"Выберите способ оплаты:",
         parse_mode="HTML",
         reply_markup=currency_keyboard(plan_key),
     )
@@ -72,7 +90,7 @@ async def pay_currency_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         return
     _, plan_key, currency = parts
     if plan_key not in PLANS:
-        await query.answer("❌ Тариф не найден.", show_alert=True)
+        await query.answer("❌ Хостинг не найден.", show_alert=True)
         return
 
     plan = PLANS[plan_key]
@@ -80,7 +98,7 @@ async def pay_currency_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     payload = f"{user_id}:{plan_key}"
 
     await query.edit_message_text(
-        f"⏳ Создаю счёт на оплату {plan['price']} {currency}...",
+        f"⏳ Создаю счёт на <b>{plan['price']} {currency}</b>...",
         parse_mode="HTML",
     )
 
@@ -88,13 +106,12 @@ async def pay_currency_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         amount=plan["price"],
         asset=currency,
         payload=payload,
-        description=f"Bot Hosting — {plan['name']} ({plan['days']} дней)",
+        description=f"Bot Hosting — 1 слот / {plan['days']} дней",
     )
 
     if not inv:
-        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
         await query.edit_message_text(
-            "❌ Не удалось создать счёт. Убедитесь что CRYPTOBOT_TOKEN настроен правильно.",
+            "❌ Не удалось создать счёт.\nПроверьте настройки CRYPTOBOT_TOKEN.",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("🔙 Назад", callback_data="plans")]
             ]),
@@ -105,11 +122,13 @@ async def pay_currency_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     invoice_id = inv.get("invoice_id")
 
     await query.edit_message_text(
-        f"✅ Счёт создан!\n\n"
-        f"Тариф: <b>{plan['name']}</b>\n"
-        f"Сумма: <b>{plan['price']} {currency}</b>\n"
-        f"Срок: <b>{plan['days']} дней</b>\n\n"
-        "Нажмите кнопку ниже для оплаты. После оплаты подписка активируется автоматически.",
+        f"✅ <b>Счёт создан!</b>\n"
+        f"{_SEP}\n"
+        f"▸ 1 хостинг-слот · {plan['days']} дней\n"
+        f"▸ Сумма: <b>{plan['price']} {currency}</b>\n"
+        f"{_SEP}\n"
+        f"Нажмите кнопку ниже для оплаты.\n"
+        f"После оплаты слот добавится автоматически.",
         parse_mode="HTML",
         reply_markup=payment_keyboard(pay_url, plan_key),
     )
@@ -121,12 +140,11 @@ async def pay_currency_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 
 
 async def ton_payment_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Показывает реквизиты TON-оплаты напрямую через TonCenter."""
     query = update.callback_query
     await query.answer()
     plan_key = query.data.split(":", 1)[1]
     if plan_key not in PLANS:
-        await query.answer("❌ Тариф не найден.", show_alert=True)
+        await query.answer("❌ Хостинг не найден.", show_alert=True)
         return
 
     wallet = os.getenv("TON_WALLET", "")
@@ -141,7 +159,7 @@ async def ton_payment_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     plan = PLANS[plan_key]
     user_id = query.from_user.id
-    amount_ton = get_ton_amount(plan["price"])
+    amount_ton = await get_ton_amount(plan["price"])
     comment = make_ton_comment(user_id, plan_key)
 
     context.user_data["ton_payment"] = {
@@ -151,18 +169,20 @@ async def ton_payment_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     }
 
     await query.edit_message_text(
-        f"💎 <b>Оплата TON напрямую</b>\n\n"
-        f"Тариф: <b>{plan['name']}</b>\n"
-        f"Сумма: <b>{amount_ton} TON</b>\n\n"
-        f"1️⃣ Откройте TonKeeper или любой TON-кошелёк\n"
-        f"2️⃣ Отправьте ровно <b>{amount_ton} TON</b> на адрес:\n"
-        f"<code>{wallet}</code>\n\n"
-        f"3️⃣ В поле <b>Комментарий</b> обязательно укажите:\n"
-        f"<code>{comment}</code>\n\n"
-        f"⚠️ Без комментария оплата не будет засчитана!\n\n"
+        f"💎 <b>Оплата через TON</b>\n"
+        f"{_SEP}\n"
+        f"▸ 1 хостинг-слот · {plan['days']} дней\n"
+        f"▸ Сумма: <b>{amount_ton} TON</b>\n"
+        f"{_SEP}\n"
+        f"Нажмите кнопку ниже — TonKeeper откроется\n"
+        f"с заполненными реквизитами.\n\n"
+        f"Или вручную:\n"
+        f"📋 Адрес: <code>{wallet}</code>\n"
+        f"💬 Комментарий: <code>{comment}</code>\n\n"
+        f"⚠️ <b>Комментарий обязателен!</b> Без него оплата не засчитается.\n\n"
         f"После отправки нажмите <b>✅ Я оплатил</b>.",
         parse_mode="HTML",
-        reply_markup=ton_payment_keyboard(plan_key),
+        reply_markup=ton_payment_keyboard(plan_key, wallet, amount_ton, comment),
     )
 
     user_registry = context.bot_data["user_registry"]
@@ -172,7 +192,6 @@ async def ton_payment_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 
 async def ton_check_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Ручная проверка TON-оплаты по кнопке 'Я оплатил'."""
     query = update.callback_query
     await query.answer("⏳ Проверяю транзакцию...")
     plan_key = query.data.split(":", 1)[1]
@@ -199,8 +218,10 @@ async def ton_check_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         from payments import _activate_plan
         await _activate_plan(user_id, plan_key, plan, context.bot, user_registry)
         await query.edit_message_text(
-            f"✅ <b>Оплата подтверждена!</b>\n\n"
-            f"Тариф <b>{plan['name']}</b> активирован.",
+            f"✅ <b>Оплата подтверждена!</b>\n"
+            f"{_SEP}\n"
+            f"🖥 Добавлен 1 хостинг-слот\n"
+            f"🤖 Теперь можно запустить ещё одного бота",
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("🤖 Мои боты", callback_data="my_bots")]
@@ -208,11 +229,13 @@ async def ton_check_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     else:
         await query.edit_message_text(
-            "❌ <b>Транзакция не найдена.</b>\n\n"
-            "Убедитесь что:\n"
-            f"• Сумма: <b>{amount_ton} TON</b>\n"
-            f"• Комментарий: <code>{comment}</code>\n\n"
-            "Попробуйте снова через минуту.",
+            f"❌ <b>Транзакция не найдена.</b>\n"
+            f"{_SEP}\n"
+            f"Убедитесь что отправили:\n"
+            f"▸ Сумма: <b>{amount_ton} TON</b>\n"
+            f"▸ Комментарий: <code>{comment}</code>\n"
+            f"{_SEP}\n"
+            f"Попробуйте снова через минуту.",
             parse_mode="HTML",
-            reply_markup=ton_payment_keyboard(plan_key),
+            reply_markup=ton_payment_keyboard(plan_key, wallet, amount_ton, comment),
         )

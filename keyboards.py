@@ -25,7 +25,7 @@ def main_menu_keyboard() -> InlineKeyboardMarkup:
             InlineKeyboardButton("🤖 Мои боты", callback_data="my_bots"),
             InlineKeyboardButton("➕ Добавить бота", callback_data="add_bot"),
         ],
-        [InlineKeyboardButton("💰 Баланс / Тариф", callback_data="balance")],
+        [InlineKeyboardButton("🖥 Мой хостинг", callback_data="balance")],
     ])
 
 
@@ -126,10 +126,10 @@ def add_source_keyboard() -> InlineKeyboardMarkup:
     ])
 
 
-# ─── Баланс / тариф ───────────────────────────────────────────────────────────
+# ─── Хостинг ──────────────────────────────────────────────────────────────────
 def balance_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("📦 Выбрать тариф", callback_data="plans")],
+        [InlineKeyboardButton("🖥 Купить хостинг-слот", callback_data="plans")],
         [InlineKeyboardButton("🔙 Назад", callback_data="menu")],
     ])
 
@@ -137,7 +137,7 @@ def balance_keyboard() -> InlineKeyboardMarkup:
 def plans_keyboard() -> InlineKeyboardMarkup:
     rows = []
     for key, plan in PLANS.items():
-        label = f"{plan['name']} — {plan['bots']} бот(ов) / {plan['price']} USDT/мес"
+        label = f"💾 {plan['ram']} RAM — {plan['price']} USDT/мес"
         rows.append([InlineKeyboardButton(label, callback_data=f"buy_plan:{key}")])
     rows.append([InlineKeyboardButton("🔙 Назад", callback_data="balance")])
     return InlineKeyboardMarkup(rows)
@@ -146,7 +146,7 @@ def plans_keyboard() -> InlineKeyboardMarkup:
 def currency_keyboard(plan_key: str) -> InlineKeyboardMarkup:
     rows = [[InlineKeyboardButton(c, callback_data=f"pay_currency:{plan_key}:{c}")]
             for c in CURRENCIES]
-    rows.append([InlineKeyboardButton("💎 TON напрямую (TonCenter)", callback_data=f"pay_ton:{plan_key}")])
+    rows.append([InlineKeyboardButton("💎 Оплатить TON", callback_data=f"pay_ton:{plan_key}")])
     rows.append([InlineKeyboardButton("🔙 Назад", callback_data="plans")])
     return InlineKeyboardMarkup(rows)
 
@@ -158,11 +158,15 @@ def payment_keyboard(pay_url: str, plan_key: str) -> InlineKeyboardMarkup:
     ])
 
 
-def ton_payment_keyboard(plan_key: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("✅ Я оплатил", callback_data=f"ton_check:{plan_key}")],
-        [InlineKeyboardButton("🔙 Назад", callback_data=f"buy_plan:{plan_key}")],
-    ])
+def ton_payment_keyboard(plan_key: str, wallet: str = "", amount_ton: float = 0, comment: str = "") -> InlineKeyboardMarkup:
+    rows = []
+    if wallet and amount_ton:
+        amount_nano = int(amount_ton * 1_000_000_000)
+        tonkeeper_url = f"https://app.tonkeeper.com/transfer/{wallet}?amount={amount_nano}&text={comment}"
+        rows.append([InlineKeyboardButton("💎 Открыть TonKeeper", url=tonkeeper_url)])
+    rows.append([InlineKeyboardButton("✅ Я оплатил", callback_data=f"ton_check:{plan_key}")])
+    rows.append([InlineKeyboardButton("🔙 Назад", callback_data=f"buy_plan:{plan_key}")])
+    return InlineKeyboardMarkup(rows)
 
 
 # ─── Админ-панель ─────────────────────────────────────────────────────────────
@@ -172,8 +176,34 @@ def admin_menu_keyboard() -> InlineKeyboardMarkup:
             InlineKeyboardButton("👥 Пользователи", callback_data="admin_users"),
             InlineKeyboardButton("🤖 Все боты", callback_data="admin_bots"),
         ],
-        [InlineKeyboardButton("📊 Ресурсы", callback_data="admin_resources")],
+        [
+            InlineKeyboardButton("📊 Ресурсы", callback_data="admin_resources"),
+            InlineKeyboardButton("🖥 Воркеры", callback_data="admin_workers"),
+        ],
         [InlineKeyboardButton("🔙 Назад", callback_data="menu")],
+    ])
+
+
+def workers_keyboard(workers: list[dict], statuses: dict) -> InlineKeyboardMarkup:
+    rows = []
+    for w in workers:
+        icon = "🟢" if statuses.get(w["id"]) else "🔴"
+        rows.append([InlineKeyboardButton(
+            f"{icon} {w['label']} ({w['url']})",
+            callback_data=f"admin_worker:{w['id']}",
+        )])
+    rows.append([InlineKeyboardButton("➕ Добавить воркер", callback_data="admin_add_worker")])
+    rows.append([InlineKeyboardButton("🔙 Назад", callback_data="admin_menu")])
+    return InlineKeyboardMarkup(rows)
+
+
+def worker_detail_keyboard(worker_id: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("📊 Ресурсы", callback_data=f"admin_worker_res:{worker_id}"),
+            InlineKeyboardButton("❌ Удалить", callback_data=f"admin_worker_del:{worker_id}"),
+        ],
+        [InlineKeyboardButton("🔙 Назад", callback_data="admin_workers")],
     ])
 
 

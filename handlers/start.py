@@ -3,6 +3,8 @@ from telegram.ext import ContextTypes
 
 from keyboards import main_menu_keyboard
 
+_SEP = "━━━━━━━━━━━━━━━"
+
 
 async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -12,10 +14,14 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             user_registry.register(user.id, user.username or "")
 
     text = (
-        "👋 Добро пожаловать в <b>Bot Hosting</b>!\n\n"
-        "Здесь вы можете размещать своих Python-ботов "
-        "и управлять ими прямо из Telegram.\n\n"
-        "Выберите действие:"
+        f"🚀 <b>Bot Hosting</b>\n"
+        f"{_SEP}\n"
+        f"Запускайте Python-ботов 24/7\n"
+        f"без сервера и технических знаний.\n"
+        f"{_SEP}\n"
+        f"▸ Купите хостинг — получите слот\n"
+        f"▸ Загрузите ZIP или Git репозиторий\n"
+        f"▸ Бот работает круглосуточно"
     )
 
     if update.callback_query:

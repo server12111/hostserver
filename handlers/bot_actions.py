@@ -7,6 +7,15 @@ from keyboards import (
     bot_detail_keyboard, delete_confirm_keyboard, logs_keyboard,
     packages_keyboard, config_keyboard, config_edit_keyboard,
 )
+import worker_client as wc
+
+
+def _get_worker(bot: dict, context) -> dict | None:
+    wid = bot.get("worker_id")
+    if not wid:
+        return None
+    wr = context.bot_data.get("worker_registry")
+    return wr.get_worker(wid) if wr else None
 
 WAITING_PACKAGES = 10
 WAITING_CONFIG = 20
@@ -36,7 +45,15 @@ async def start_bot_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not bot or not _has_access(user_id, bot, context):
         await query.answer("⛔ Нет доступа.", show_alert=True)
         return
-    ok, msg = manager.start_bot(bot_name)
+    worker = _get_worker(bot, context)
+    if worker:
+        ok, msg = await wc.start(worker, bot_name)
+        if ok:
+            registry.update_bot(bot_name, status="running")
+    else:
+        ok, msg = manager.start_bot(bot_name)
+        if ok:
+            manager.schedule_watch(bot_name)
     is_running = manager.is_running(bot_name)
     await query.edit_message_text(
         f"🤖 <b>{bot.get('display_name', bot_name)}</b>\n\n"
@@ -59,7 +76,13 @@ async def stop_bot_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not bot or not _has_access(user_id, bot, context):
         await query.answer("⛔ Нет доступа.", show_alert=True)
         return
-    ok, msg = manager.stop_bot(bot_name)
+    worker = _get_worker(bot, context)
+    if worker:
+        ok, msg = await wc.stop(worker, bot_name)
+        if ok:
+            registry.update_bot(bot_name, status="stopped")
+    else:
+        ok, msg = manager.stop_bot(bot_name)
     is_running = manager.is_running(bot_name)
     await query.edit_message_text(
         f"🤖 <b>{bot.get('display_name', bot_name)}</b>\n\n"
@@ -101,7 +124,12 @@ async def confirm_delete_handler(update: Update, context: ContextTypes.DEFAULT_T
         await query.answer("⛔ Нет доступа.", show_alert=True)
         return
     owner_id = bot.get("owner_id", user_id)
-    ok, msg = manager.delete_bot(bot_name)
+    worker = _get_worker(bot, context)
+    if worker:
+        ok, msg = await wc.delete(worker, bot_name)
+        registry.remove_bot(bot_name)
+    else:
+        ok, msg = manager.delete_bot(bot_name)
     user_registry.remove_bot_from_user(owner_id, bot_name)
     bots = registry.list_bots_by_owner(user_id) if not _is_admin(user_id, context) else registry.list_bots()
     if bots:
@@ -133,7 +161,11 @@ async def logs_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not bot or not _has_access(user_id, bot, context):
         await query.answer("⛔ Нет доступа.", show_alert=True)
         return
-    logs = manager.get_logs(bot_name, n=30)
+    worker = _get_worker(bot, context)
+    if worker:
+        logs = await wc.logs(worker, bot_name, n=30)
+    else:
+        logs = manager.get_logs(bot_name, n=30)
     logs_trimmed = logs[-3800:] if len(logs) > 3800 else logs
     await query.edit_message_text(
         f"📋 <b>Логи: {bot.get('display_name', bot_name)}</b>\n\n<code>{_esc(logs_trimmed)}</code>",
@@ -153,11 +185,15 @@ async def config_view_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     if not bot or not _has_access(user_id, bot, context):
         await query.answer("⛔ Нет доступа.", show_alert=True)
         return
-    env_file = os.path.join(bot["path"], ".env")
-    content = ""
-    if os.path.exists(env_file):
-        with open(env_file, encoding="utf-8") as f:
-            content = f.read().strip()
+    worker = _get_worker(bot, context)
+    if worker:
+        content = await wc.get_config(worker, bot_name)
+    else:
+        env_file = os.path.join(bot["path"], ".env")
+        content = ""
+        if os.path.exists(env_file):
+            with open(env_file, encoding="utf-8") as f:
+                content = f.read().strip()
     display = f"<code>{_esc(content)}</code>" if content else "<i>(пусто)</i>"
     await query.edit_message_text(
         f"📝 <b>Конфиг: {bot.get('display_name', bot_name)}</b>\n\n{display}",
@@ -205,8 +241,13 @@ async def config_save_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     if not bot:
         await update.message.reply_text("❌ Бот не найден.")
         return ConversationHandler.END
-    with open(os.path.join(bot["path"], ".env"), "w", encoding="utf-8") as f:
-        f.write(update.message.text.strip() + "\n")
+    new_content = update.message.text.strip()
+    worker = _get_worker(bot, context)
+    if worker:
+        await wc.save_config(worker, bot_name, new_content)
+    else:
+        with open(os.path.join(bot["path"], ".env"), "w", encoding="utf-8") as f:
+            f.write(new_content + "\n")
     await update.message.reply_text(
         f"✅ Конфиг сохранён для <b>{bot.get('display_name', bot_name)}</b>.\n"
         "Перезапустите бота, чтобы изменения вступили в силу.",
@@ -278,7 +319,11 @@ async def packages_install_handler(update: Update, context: ContextTypes.DEFAULT
     status_msg = await update.message.reply_text(
         f"⏳ Устанавливаю: <code>{' '.join(packages)}</code>...", parse_mode="HTML"
     )
-    ok, msg = await manager.install_packages(bot["path"], packages)
+    worker = _get_worker(bot, context)
+    if worker:
+        ok, msg = await wc.install(worker, bot_name, packages)
+    else:
+        ok, msg = await manager.install_packages(bot["path"], packages)
     await status_msg.edit_text(
         f"{'✅' if ok else '❌'} {_esc(msg)}",
         parse_mode="HTML",

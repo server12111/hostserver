@@ -8,12 +8,12 @@ CRYPTOBOT_API = "https://pay.crypt.bot/api"
 TONCENTER_API = "https://toncenter.com/api/v2"
 
 PLANS = {
-    "starter": {"name": "Starter", "bots": 1,  "price": 1.0, "days": 30},
-    "basic":   {"name": "Basic",   "bots": 3,  "price": 2.0, "days": 30},
-    "pro":     {"name": "Pro",     "bots": 10, "price": 5.0, "days": 30},
+    "hosting_1":   {"name": "Хостинг 1 ГБ",   "bots": 1, "price": 2.0, "days": 30, "ram": "1 ГБ",   "disk": "5 ГБ"},
+    "hosting_1_5": {"name": "Хостинг 1.5 ГБ", "bots": 1, "price": 3.0, "days": 30, "ram": "1.5 ГБ", "disk": "7 ГБ"},
+    "hosting_2":   {"name": "Хостинг 2 ГБ",   "bots": 1, "price": 5.0, "days": 30, "ram": "2 ГБ",   "disk": "10 ГБ"},
 }
 
-CURRENCIES = ["USDT", "TON", "BTC"]
+CURRENCIES = ["USDT"]
 
 
 async def create_invoice(amount: float, asset: str, payload: str, description: str) -> dict | None:
@@ -91,17 +91,16 @@ async def poll_invoice(
             user_registry.update_user(
                 user_id,
                 subscription_until=new_until.isoformat(timespec="seconds"),
-                max_bots=max(u.get("max_bots", 0), plan["bots"]),
+                max_bots=u.get("max_bots", 0) + plan["bots"],
                 plan=plan_key,
             )
             try:
                 await bot.send_message(
                     chat_id=user_id,
                     text=(
-                        f"✅ Оплата получена!\n\n"
-                        f"Тариф: <b>{plan['name']}</b>\n"
-                        f"Ботов: до <b>{plan['bots']}</b>\n"
-                        f"Подписка до: <b>{new_until.strftime('%d.%m.%Y')}</b>"
+                        f"✅ <b>Хостинг оплачен!</b>\n\n"
+                        f"🤖 Добавлен 1 слот\n"
+                        f"📅 Активен до: <b>{new_until.strftime('%d.%m.%Y')}</b>"
                     ),
                     parse_mode="HTML",
                 )
@@ -114,9 +113,34 @@ async def poll_invoice(
 
 # ─── TON прямая оплата (TonCenter) ────────────────────────────────────────────
 
-def get_ton_amount(usdt_price: float) -> float:
-    """Конвертация USDT → TON по курсу из .env (TON_PRICE_USDT) или дефолт 3.0."""
-    ton_price = float(os.getenv("TON_PRICE_USDT", "3.0"))
+_ton_price_cache: dict = {"price": 3.0, "ts": 0.0}
+
+
+async def fetch_ton_price_usd() -> float:
+    """Получает актуальный курс TON/USD с CoinGecko. Кешируется на 10 минут."""
+    import time
+    now = time.time()
+    if now - _ton_price_cache["ts"] < 600:
+        return _ton_price_cache["price"]
+    try:
+        async with aiohttp.ClientSession() as s:
+            r = await s.get(
+                "https://api.coingecko.com/api/v3/simple/price",
+                params={"ids": "the-open-network", "vs_currencies": "usd"},
+                timeout=aiohttp.ClientTimeout(total=10),
+            )
+            data = await r.json()
+            price = float(data["the-open-network"]["usd"])
+            _ton_price_cache["price"] = price
+            _ton_price_cache["ts"] = now
+            return price
+    except Exception:
+        return _ton_price_cache["price"]
+
+
+async def get_ton_amount(usdt_price: float) -> float:
+    """Конвертация USDT → TON по актуальному курсу CoinGecko."""
+    ton_price = await fetch_ton_price_usd()
     return round(usdt_price / ton_price, 2)
 
 
@@ -191,17 +215,16 @@ async def _activate_plan(user_id: int, plan_key: str, plan: dict, bot, user_regi
     user_registry.update_user(
         user_id,
         subscription_until=new_until.isoformat(timespec="seconds"),
-        max_bots=max(u.get("max_bots", 0), plan["bots"]),
+        max_bots=u.get("max_bots", 0) + plan["bots"],
         plan=plan_key,
     )
     try:
         await bot.send_message(
             chat_id=user_id,
             text=(
-                f"✅ <b>Оплата TON получена!</b>\n\n"
-                f"Тариф: <b>{plan['name']}</b>\n"
-                f"Ботов: до <b>{plan['bots']}</b>\n"
-                f"Подписка до: <b>{new_until.strftime('%d.%m.%Y')}</b>"
+                f"✅ <b>Хостинг оплачен!</b>\n\n"
+                f"🤖 Добавлен 1 слот\n"
+                f"📅 Активен до: <b>{new_until.strftime('%d.%m.%Y')}</b>"
             ),
             parse_mode="HTML",
         )

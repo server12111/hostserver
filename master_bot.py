@@ -1,6 +1,8 @@
+import asyncio
 import os
 import sys
 import warnings
+from datetime import datetime
 
 warnings.filterwarnings("ignore", message=".*per_message.*")
 
@@ -47,7 +49,13 @@ from handlers.payment import (
 from handlers.admin import (
     admin_command_handler, admin_users_handler, admin_bots_handler,
     admin_resources_handler, admin_user_detail_handler,
+    admin_workers_handler, admin_worker_detail_handler,
+    admin_worker_resources_handler, admin_worker_delete_handler,
+    admin_add_worker_entry, admin_receive_worker_url,
+    admin_receive_worker_secret, admin_cancel_worker,
+    WAITING_WORKER_URL, WAITING_WORKER_SECRET,
 )
+from worker_registry import WorkerRegistry
 
 load_dotenv()
 TOKEN = os.getenv("BOT_TOKEN")
@@ -68,6 +76,35 @@ async def admin_guard(update: Update, context) -> None:
         pass
 
 
+async def _renewal_reminder(bot, user_registry):
+    while True:
+        await asyncio.sleep(3600)
+        now = datetime.now()
+        for u in user_registry.list_users():
+            sub = u.get("subscription_until")
+            if not sub:
+                continue
+            dt = datetime.fromisoformat(sub)
+            days_left = (dt - now).days
+            if days_left == 3:
+                try:
+                    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+                    await bot.send_message(
+                        chat_id=u["user_id"],
+                        text=(
+                            f"⚠️ <b>Хостинг заканчивается!</b>\n\n"
+                            f"До окончания: <b>3 дня</b> ({dt.strftime('%d.%m.%Y')})\n\n"
+                            f"Продлите хостинг, чтобы боты продолжали работать."
+                        ),
+                        parse_mode="HTML",
+                        reply_markup=InlineKeyboardMarkup([
+                            [InlineKeyboardButton("🖥 Продлить хостинг", callback_data="plans")]
+                        ]),
+                    )
+                except Exception:
+                    pass
+
+
 async def post_init(application: Application) -> None:
     registry = RegistryManager()
     registry.restore_running_bots()
@@ -77,6 +114,10 @@ async def post_init(application: Application) -> None:
     application.bot_data["manager"] = manager
     application.bot_data["user_registry"] = user_registry
     application.bot_data["admin_ids"] = ADMIN_IDS
+    worker_registry = WorkerRegistry()
+    application.bot_data["worker_registry"] = worker_registry
+    manager.set_telegram_bot(application.bot)
+    asyncio.create_task(_renewal_reminder(application.bot, user_registry))
 
 
 async def post_shutdown(application: Application) -> None:
@@ -141,9 +182,25 @@ def build_app() -> Application:
         per_message=False,
     )
 
+    # ── ConversationHandler: добавление воркера ──────────────────────────────
+    add_worker_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(admin_add_worker_entry, pattern="^admin_add_worker$")],
+        states={
+            WAITING_WORKER_URL: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, admin_receive_worker_url),
+            ],
+            WAITING_WORKER_SECRET: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, admin_receive_worker_secret),
+            ],
+        },
+        fallbacks=[CallbackQueryHandler(admin_cancel_worker, pattern="^admin_workers$")],
+        per_message=False,
+    )
+
     app.add_handler(add_bot_conv)
     app.add_handler(packages_conv)
     app.add_handler(config_conv)
+    app.add_handler(add_worker_conv)
 
     # ── Команды ───────────────────────────────────────────────────────────────
     app.add_handler(CommandHandler("start", start_handler))
@@ -178,6 +235,10 @@ def build_app() -> Application:
     app.add_handler(CallbackQueryHandler(admin_bots_handler, pattern="^admin_bots$"))
     app.add_handler(CallbackQueryHandler(admin_resources_handler, pattern="^admin_resources$"))
     app.add_handler(CallbackQueryHandler(admin_user_detail_handler, pattern="^admin_user:"))
+    app.add_handler(CallbackQueryHandler(admin_workers_handler, pattern="^admin_workers$"))
+    app.add_handler(CallbackQueryHandler(admin_worker_detail_handler, pattern="^admin_worker:"))
+    app.add_handler(CallbackQueryHandler(admin_worker_resources_handler, pattern="^admin_worker_res:"))
+    app.add_handler(CallbackQueryHandler(admin_worker_delete_handler, pattern="^admin_worker_del:"))
 
     app.add_error_handler(error_handler)
     return app

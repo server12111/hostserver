@@ -27,7 +27,7 @@ class RegistryManager:
 
     def add_bot(self, name: str, path: str, entry_point: str,
                 owner_id: int = 0, display_name: str = "",
-                source: str = "zip", git_url: str = None):
+                source: str = "zip", git_url: str = None, worker_id: str = None):
         with self._lock:
             self._data["bots"][name] = {
                 "name": name,
@@ -37,12 +37,18 @@ class RegistryManager:
                 "entry_point": entry_point,
                 "source": source,
                 "git_url": git_url,
+                "worker_id": worker_id,
                 "added_at": datetime.now().isoformat(timespec="seconds"),
                 "status": "stopped",
                 "pid": None,
                 "provisioned": False,
             }
             self._save()
+
+    def list_bots_by_worker(self, worker_id: str) -> list[dict]:
+        with self._lock:
+            return [b for b in self._data["bots"].values()
+                    if b.get("worker_id") == worker_id]
 
     def update_bot(self, name: str, **kwargs):
         with self._lock:

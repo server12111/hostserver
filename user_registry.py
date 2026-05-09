@@ -87,8 +87,8 @@ class UserRegistry:
             return "не зарегистрирован"
         sub = u.get("subscription_until")
         if not sub:
-            return "нет подписки"
+            return "📅 Хостинг не куплен"
         dt = datetime.fromisoformat(sub)
         if dt < datetime.now():
-            return f"истекла {dt.strftime('%d.%m.%Y')}"
-        return f"активна до {dt.strftime('%d.%m.%Y')}"
+            return f"📅 Хостинг истёк {dt.strftime('%d.%m.%Y')}"
+        return f"📅 Активен до {dt.strftime('%d.%m.%Y')}"

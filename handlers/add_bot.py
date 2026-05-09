@@ -1,4 +1,5 @@
 import asyncio
+import io
 import os
 import shutil
 import zipfile
@@ -7,6 +8,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
 
 from keyboards import sanitize_bot_name, make_bot_key, add_source_keyboard, bot_detail_keyboard
+import worker_client
 
 WAITING_ZIP = 1
 WAITING_GIT_URL = 2
@@ -28,14 +30,23 @@ async def add_bot_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
         u = user_registry.get_user(user_id)
         bots_count = len(u.get("bots", [])) if u else 0
         max_bots = u.get("max_bots", 0) if u else 0
-        if bots_count >= max_bots and max_bots > 0:
-            msg = "⛔ Вы достигли лимита ботов для вашего тарифа.\nОбновите тариф в разделе <b>💰 Баланс / Тариф</b>."
+        if max_bots > 0 and bots_count >= max_bots:
+            msg = (
+                "🖥 <b>Все слоты заняты</b>\n\n"
+                f"У вас {bots_count} из {max_bots} ботов.\n\n"
+                "Купите ещё один хостинг-слот\nчтобы добавить нового бота."
+            )
         else:
-            msg = "⛔ У вас нет активной подписки.\nОформите тариф в разделе <b>💰 Баланс / Тариф</b>."
+            msg = (
+                "🖥 <b>Необходим хостинг</b>\n\n"
+                "▸ 1 бот · 2 ГБ RAM · 10 ГБ диск\n"
+                "▸ 3 USDT / 30 дней\n\n"
+                "Купите хостинг — и сразу сможете\nдобавить своего бота."
+            )
         await query.edit_message_text(
             msg, parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("💰 Тарифы", callback_data="plans")],
+                [InlineKeyboardButton("🖥 Купить хостинг", callback_data="plans")],
                 [InlineKeyboardButton("🔙 Назад", callback_data="menu")],
             ]),
         )
@@ -87,35 +98,15 @@ async def receive_zip(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     display_name = sanitize_bot_name(os.path.splitext(doc.file_name)[0])
     bot_name = _unique_name(make_bot_key(display_name, user_id), registry)
-    bot_path = os.path.abspath(os.path.join(BOTS_DIR, bot_name))
-    os.makedirs(bot_path, exist_ok=True)
-    zip_temp = os.path.join(bot_path, "_upload.zip")
 
     status_msg = await update.message.reply_text("⏳ Загружаю архив...")
     tg_file = await doc.get_file()
-    await tg_file.download_to_drive(zip_temp)
-
-    try:
-        with zipfile.ZipFile(zip_temp) as zf:
-            for member in zf.namelist():
-                if ".." in member or os.path.isabs(member):
-                    raise ValueError(f"Небезопасный путь в ZIP: {member}")
-            zf.extractall(bot_path)
-    except zipfile.BadZipFile:
-        shutil.rmtree(bot_path, ignore_errors=True)
-        await status_msg.edit_text("❌ Файл не является корректным ZIP-архивом.")
-        return ConversationHandler.END
-    except ValueError as e:
-        shutil.rmtree(bot_path, ignore_errors=True)
-        await status_msg.edit_text(f"❌ {e}")
-        return ConversationHandler.END
-    finally:
-        if os.path.exists(zip_temp):
-            os.remove(zip_temp)
+    zip_bytes = await tg_file.download_as_bytearray()
 
     return await _finalize_bot(
         update, context, status_msg, bot_name, display_name,
-        bot_path, registry, manager, user_registry, user_id, source="zip",
+        registry, manager, user_registry, user_id,
+        source="zip", zip_bytes=bytes(zip_bytes),
     )
 
 
@@ -136,22 +127,15 @@ async def receive_git_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
         raw_name = raw_name[:-4]
     display_name = sanitize_bot_name(raw_name)
     bot_name = _unique_name(make_bot_key(display_name, user_id), registry)
-    bot_path = os.path.abspath(os.path.join(BOTS_DIR, bot_name))
 
     status_msg = await update.message.reply_text(
         f"⏳ Клонирую репозиторий <code>{git_url}</code>...",
         parse_mode="HTML",
     )
 
-    ok, err = await asyncio.to_thread(_git_clone, git_url, bot_path)
-    if not ok:
-        shutil.rmtree(bot_path, ignore_errors=True)
-        await status_msg.edit_text(f"❌ Ошибка клонирования:\n<code>{err[:400]}</code>", parse_mode="HTML")
-        return ConversationHandler.END
-
     return await _finalize_bot(
         update, context, status_msg, bot_name, display_name,
-        bot_path, registry, manager, user_registry, user_id,
+        registry, manager, user_registry, user_id,
         source="git", git_url=git_url,
     )
 
@@ -165,19 +149,116 @@ def _git_clone(url: str, path: str) -> tuple[bool, str]:
         return False, str(e)
 
 
+# ─── Выбор воркера ────────────────────────────────────────────────────────────
+async def _pick_worker(context) -> dict | None:
+    wr = context.bot_data.get("worker_registry")
+    if not wr:
+        return None
+    workers = wr.list_workers()
+    if not workers:
+        return None
+    registry = context.bot_data["registry"]
+    online = []
+    for w in workers:
+        h = await worker_client.health(w)
+        if h.get("ok"):
+            w = dict(w)
+            w["_bots"] = len(registry.list_bots_by_worker(w["id"]))
+            online.append(w)
+    if not online:
+        return None
+    return min(online, key=lambda w: w["_bots"])
+
+
 # ─── Финализация (общий код ZIP и Git) ────────────────────────────────────────
 async def _finalize_bot(
     update, context, status_msg,
-    bot_name, display_name, bot_path,
+    bot_name, display_name,
     registry, manager, user_registry, user_id,
-    source="zip", git_url=None,
+    source="zip", git_url=None, zip_bytes=None,
 ):
+    chosen_worker = await _pick_worker(context)
+
+    if chosen_worker:
+        # ── Деплой на воркер ──────────────────────────────────────────────────
+        await status_msg.edit_text(
+            f"⏳ Деплою бота <b>{display_name}</b> на воркер <b>{chosen_worker['label']}</b>...",
+            parse_mode="HTML",
+        )
+        if source == "zip":
+            ok, entry_point = await worker_client.deploy_zip(
+                chosen_worker, bot_name, zip_bytes, display_name, user_id
+            )
+        else:
+            ok, entry_point = await worker_client.deploy_git(
+                chosen_worker, bot_name, git_url, display_name, user_id
+            )
+        if not ok:
+            await status_msg.edit_text(
+                f"❌ Ошибка деплоя на воркер:\n<code>{entry_point}</code>",
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🔙 Назад", callback_data="menu")]
+                ]),
+            )
+            return ConversationHandler.END
+
+        registry.add_bot(
+            bot_name, "", entry_point,
+            owner_id=user_id, display_name=display_name,
+            source=source, git_url=git_url, worker_id=chosen_worker["id"],
+        )
+        user_registry.add_bot_to_user(user_id, bot_name)
+        await status_msg.edit_text(
+            f"✅ Бот <b>{display_name}</b> задеплоен на <b>{chosen_worker['label']}</b>!\n"
+            f"Точка входа: <code>{entry_point}</code>",
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton("▶️ Запустить", callback_data=f"start_bot:{bot_name}"),
+                    InlineKeyboardButton("🤖 Мои боты", callback_data="my_bots"),
+                ]
+            ]),
+        )
+        return ConversationHandler.END
+
+    # ── Локальный деплой (fallback) ────────────────────────────────────────────
+    bot_path = os.path.abspath(os.path.join(BOTS_DIR, bot_name))
+
+    if source == "zip":
+        os.makedirs(bot_path, exist_ok=True)
+        zip_temp = os.path.join(bot_path, "_upload.zip")
+        try:
+            with open(zip_temp, "wb") as f:
+                f.write(zip_bytes)
+            with zipfile.ZipFile(zip_temp) as zf:
+                for member in zf.namelist():
+                    if ".." in member or os.path.isabs(member):
+                        shutil.rmtree(bot_path, ignore_errors=True)
+                        await status_msg.edit_text(f"❌ Небезопасный путь в ZIP: {member}")
+                        return ConversationHandler.END
+                zf.extractall(bot_path)
+        except zipfile.BadZipFile:
+            shutil.rmtree(bot_path, ignore_errors=True)
+            await status_msg.edit_text("❌ Файл не является корректным ZIP-архивом.")
+            return ConversationHandler.END
+        finally:
+            if os.path.exists(zip_temp):
+                os.remove(zip_temp)
+    else:
+        ok, err = await asyncio.to_thread(_git_clone, git_url, bot_path)
+        if not ok:
+            shutil.rmtree(bot_path, ignore_errors=True)
+            await status_msg.edit_text(
+                f"❌ Ошибка клонирования:\n<code>{err[:400]}</code>", parse_mode="HTML"
+            )
+            return ConversationHandler.END
+
     entry_point = _find_entry_point(bot_path)
     if not entry_point:
         shutil.rmtree(bot_path, ignore_errors=True)
         await status_msg.edit_text(
-            "❌ Не найдено <code>main.py</code> или <code>bot.py</code> в репозитории.",
-            parse_mode="HTML",
+            "❌ Не найдено <code>main.py</code> или <code>bot.py</code>.", parse_mode="HTML"
         )
         return ConversationHandler.END
 
@@ -189,10 +270,9 @@ async def _finalize_bot(
     user_registry.add_bot_to_user(user_id, bot_name)
 
     await status_msg.edit_text(
-        f"📦 Бот <b>{display_name}</b> загружен.\n⚙️ Устанавливаю зависимости...",
+        f"📦 Бот <b>{display_name}</b> загружен локально.\n⚙️ Устанавливаю зависимости...",
         parse_mode="HTML",
     )
-
     ok, msg = await manager.provision_bot(bot_name, bot_path)
     result_text = (
         f"✅ Бот <b>{display_name}</b> готов!\nТочка входа: <code>{entry_point}</code>"

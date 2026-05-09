@@ -32,10 +32,20 @@ class BotManager:
     def __init__(self, registry: RegistryManager):
         self._registry = registry
         self._processes: dict[str, BotProcess] = {}
+        self._auto_restart: set[str] = set()
+        self._tg_bot = None
+
+    def set_telegram_bot(self, bot):
+        self._tg_bot = bot
 
     def is_running(self, name: str) -> bool:
         bp = self._processes.get(name)
-        return bp is not None and bp.is_running()
+        if bp is not None:
+            return bp.is_running()
+        bot = self._registry.get_bot(name)
+        if bot and bot.get("worker_id"):
+            return bot.get("status") == "running"
+        return False
 
     def get_logs(self, name: str, n: int = 30) -> str:
         bp = self._processes.get(name)
@@ -169,7 +179,39 @@ class BotManager:
         bp.reader_thread = threading.Thread(target=reader, daemon=True)
         bp.reader_thread.start()
 
+    def schedule_watch(self, name: str):
+        self._auto_restart.add(name)
+        asyncio.get_event_loop().create_task(self._watcher(name))
+
+    async def _watcher(self, name: str):
+        await asyncio.sleep(20)
+        while name in self._auto_restart:
+            bp = self._processes.get(name)
+            if bp and not bp.is_running():
+                bot_info = self._registry.get_bot(name)
+                if not bot_info or bot_info.get("status") != "running":
+                    break
+                await asyncio.sleep(30)
+                if name not in self._auto_restart:
+                    break
+                ok, _ = self.start_bot(name)
+                if ok and self._tg_bot:
+                    owner_id = bot_info.get("owner_id")
+                    if owner_id:
+                        try:
+                            display = bot_info.get("display_name", name)
+                            await self._tg_bot.send_message(
+                                chat_id=owner_id,
+                                text=f"🔄 Бот <b>{display}</b> упал и был автоматически перезапущен.",
+                                parse_mode="HTML",
+                            )
+                        except Exception:
+                            pass
+                return
+            await asyncio.sleep(15)
+
     def stop_bot(self, name: str) -> tuple[bool, str]:
+        self._auto_restart.discard(name)
         bp = self._processes.get(name)
         if bp is None or not bp.is_running():
             self._registry.update_bot(name, status="stopped", pid=None)
@@ -186,6 +228,7 @@ class BotManager:
             return False, str(e)
 
     def delete_bot(self, name: str) -> tuple[bool, str]:
+        self._auto_restart.discard(name)
         self.stop_bot(name)
         self._processes.pop(name, None)
         bot = self._registry.get_bot(name)

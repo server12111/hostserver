@@ -146,6 +146,7 @@ def plans_keyboard() -> InlineKeyboardMarkup:
 def currency_keyboard(plan_key: str) -> InlineKeyboardMarkup:
     rows = [[InlineKeyboardButton(c, callback_data=f"pay_currency:{plan_key}:{c}")]
             for c in CURRENCIES]
+    rows.append([InlineKeyboardButton("💎 TON напрямую (TonCenter)", callback_data=f"pay_ton:{plan_key}")])
     rows.append([InlineKeyboardButton("🔙 Назад", callback_data="plans")])
     return InlineKeyboardMarkup(rows)
 
@@ -154,6 +155,13 @@ def payment_keyboard(pay_url: str, plan_key: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("💳 Оплатить", url=pay_url)],
         [InlineKeyboardButton("🔙 Назад", callback_data="plans")],
+    ])
+
+
+def ton_payment_keyboard(plan_key: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("✅ Я оплатил", callback_data=f"ton_check:{plan_key}")],
+        [InlineKeyboardButton("🔙 Назад", callback_data=f"buy_plan:{plan_key}")],
     ])
 
 

@@ -42,6 +42,7 @@ from handlers.bot_actions import (
 from handlers.files import files_list_handler, download_file_handler
 from handlers.payment import (
     balance_handler, plans_handler, buy_plan_handler, pay_currency_handler,
+    ton_payment_handler, ton_check_handler,
 )
 from handlers.admin import (
     admin_command_handler, admin_users_handler, admin_bots_handler,
@@ -168,6 +169,8 @@ def build_app() -> Application:
     app.add_handler(CallbackQueryHandler(plans_handler, pattern="^plans$"))
     app.add_handler(CallbackQueryHandler(buy_plan_handler, pattern="^buy_plan:"))
     app.add_handler(CallbackQueryHandler(pay_currency_handler, pattern="^pay_currency:"))
+    app.add_handler(CallbackQueryHandler(ton_payment_handler, pattern="^pay_ton:"))
+    app.add_handler(CallbackQueryHandler(ton_check_handler, pattern="^ton_check:"))
 
     # ── Админ-панель ──────────────────────────────────────────────────────────
     app.add_handler(CallbackQueryHandler(admin_command_handler, pattern="^admin_menu$"))

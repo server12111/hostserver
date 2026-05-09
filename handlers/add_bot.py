@@ -1,4 +1,5 @@
 import asyncio
+import html
 import io
 import os
 import shutil
@@ -229,7 +230,7 @@ async def _finalize_bot(
             )
         if not ok:
             await status_msg.edit_text(
-                f"❌ Ошибка деплоя на воркер:\n<code>{entry_point}</code>",
+                f"❌ Ошибка деплоя на воркер:\n<code>{html.escape(entry_point)}</code>",
                 parse_mode="HTML",
                 reply_markup=InlineKeyboardMarkup([
                     [InlineKeyboardButton("🔙 Назад", callback_data="menu")]

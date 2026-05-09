@@ -65,6 +65,7 @@ async def start(worker: dict, bot_name: str) -> tuple[bool, str]:
     try:
         async with aiohttp.ClientSession() as s:
             r = await s.post(_url(worker, f"/start/{bot_name}"),
+                             json={"public_url": worker.get("url", "").rstrip("/")},
                              headers=_headers(worker), timeout=_TIMEOUT_SHORT)
             data = await r.json()
             return data.get("ok", False), data.get("msg", "")

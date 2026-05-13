@@ -79,6 +79,24 @@ async def admin_guard(update: Update, context) -> None:
         pass
 
 
+async def _sync_worker_states(bot_data: dict) -> None:
+    import worker_client as wc
+    wr = bot_data.get("worker_registry")
+    registry = bot_data["registry"]
+    if not wr:
+        return
+    for worker in wr.list_workers():
+        try:
+            res = await wc.resources(worker)
+            running_names = {r["name"] for r in res}
+            for bot in registry.list_bots_by_worker(worker["id"]):
+                status = "running" if bot["name"] in running_names else "stopped"
+                registry.update_bot(bot["name"], status=status)
+            print(f"[sync] {worker['label']}: {len(running_names)} running bots synced")
+        except Exception as e:
+            print(f"[sync] {worker.get('label', worker['id'])} unavailable: {e}")
+
+
 async def _renewal_reminder(bot, user_registry):
     while True:
         await asyncio.sleep(3600)
@@ -120,6 +138,7 @@ async def post_init(application: Application) -> None:
     worker_registry = WorkerRegistry()
     application.bot_data["worker_registry"] = worker_registry
     manager.set_telegram_bot(application.bot)
+    asyncio.create_task(_sync_worker_states(application.bot_data))
     asyncio.create_task(_renewal_reminder(application.bot, user_registry))
 
 

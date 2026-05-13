@@ -77,7 +77,8 @@ class RegistryManager:
     def restore_running_bots(self):
         with self._lock:
             for bot in self._data["bots"].values():
-                if bot.get("status") == "running":
+                # Сбрасываем только локальные боты — воркерные синхронизируются отдельно
+                if bot.get("status") == "running" and not bot.get("worker_id"):
                     bot["status"] = "stopped"
                     bot["pid"] = None
             self._save()

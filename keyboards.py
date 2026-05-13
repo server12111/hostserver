@@ -35,7 +35,11 @@ def bot_list_keyboard(bots: list[dict], manager) -> InlineKeyboardMarkup:
     for bot in bots:
         name = bot["name"]
         display = bot.get("display_name", name)
-        icon = STATUS_ICON["running"] if manager.is_running(name) else STATUS_ICON["stopped"]
+        if bot.get("worker_id"):
+            is_running = bot.get("status") == "running"
+        else:
+            is_running = manager.is_running(name)
+        icon = STATUS_ICON["running"] if is_running else STATUS_ICON["stopped"]
         rows.append([InlineKeyboardButton(f"{icon} {display}", callback_data=f"bot_info:{name}")])
     rows.append([InlineKeyboardButton("🔙 Назад", callback_data="menu")])
     return InlineKeyboardMarkup(rows)
@@ -242,7 +246,11 @@ def admin_bots_keyboard(bots: list[dict], manager) -> InlineKeyboardMarkup:
         name = bot["name"]
         display = bot.get("display_name", name)
         owner = bot.get("owner_id", "?")
-        icon = STATUS_ICON["running"] if manager.is_running(name) else STATUS_ICON["stopped"]
+        if bot.get("worker_id"):
+            is_running = bot.get("status") == "running"
+        else:
+            is_running = manager.is_running(name)
+        icon = STATUS_ICON["running"] if is_running else STATUS_ICON["stopped"]
         rows.append([InlineKeyboardButton(
             f"{icon} {display} (uid:{owner})",
             callback_data=f"bot_info:{name}",

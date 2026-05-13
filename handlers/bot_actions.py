@@ -25,6 +25,12 @@ WAITING_PACKAGES = 10
 WAITING_CONFIG = 20
 
 
+def _is_running(bot: dict, manager) -> bool:
+    if bot.get("worker_id"):
+        return bot.get("status") == "running"
+    return manager.is_running(bot["name"])
+
+
 def _is_admin(user_id: int, context) -> bool:
     return user_id in context.bot_data.get("admin_ids", set())
 
@@ -58,7 +64,8 @@ async def start_bot_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ok, msg = manager.start_bot(bot_name)
         if ok:
             manager.schedule_watch(bot_name)
-    is_running = manager.is_running(bot_name)
+    bot = registry.get_bot(bot_name)
+    is_running = _is_running(bot, manager)
     await query.edit_message_text(
         f"🤖 <b>{bot.get('display_name', bot_name)}</b>\n\n"
         f"Статус: {'🟢 Запущен' if is_running else '🔴 Остановлен'}\n\n"
@@ -87,7 +94,8 @@ async def stop_bot_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             registry.update_bot(bot_name, status="stopped")
     else:
         ok, msg = manager.stop_bot(bot_name)
-    is_running = manager.is_running(bot_name)
+    bot = registry.get_bot(bot_name)
+    is_running = _is_running(bot, manager)
     await query.edit_message_text(
         f"🤖 <b>{bot.get('display_name', bot_name)}</b>\n\n"
         f"Статус: {'🟢 Запущен' if is_running else '🔴 Остановлен'}\n\n"
@@ -347,7 +355,7 @@ async def cancel_packages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not bot:
         await query.edit_message_text("❌ Бот не найден.")
         return ConversationHandler.END
-    is_running = manager.is_running(bot_name)
+    is_running = _is_running(bot, manager)
     await query.edit_message_text(
         f"🤖 <b>{bot.get('display_name', bot_name)}</b>\n\n"
         f"Статус: {'🟢 Запущен' if is_running else '🔴 Остановлен'}",
@@ -384,7 +392,8 @@ async def restart_bot_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         ok, msg = manager.start_bot(bot_name)
         if ok:
             manager.schedule_watch(bot_name)
-    is_running = manager.is_running(bot_name)
+    bot = registry.get_bot(bot_name)
+    is_running = _is_running(bot, manager)
     await query.edit_message_text(
         f"🤖 <b>{bot.get('display_name', bot_name)}</b>\n\n"
         f"Статус: {'🟢 Запущен' if is_running else '🔴 Остановлен'}\n\n"
@@ -445,7 +454,8 @@ async def update_git_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data=f"bot_info:{bot_name}")]]),
         )
         return
-    is_running = manager.is_running(bot_name)
+    bot = registry.get_bot(bot_name)
+    is_running = _is_running(bot, manager)
     await query.edit_message_text(
         f"✅ <b>{bot.get('display_name', bot_name)}</b> оновлено!\n\nЗапустіть бота щоб застосувати зміни.",
         parse_mode="HTML",
@@ -502,7 +512,8 @@ async def receive_update_zip(update: Update, context: ContextTypes.DEFAULT_TYPE)
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data=f"bot_info:{bot_name}")]]),
         )
         return ConversationHandler.END
-    is_running = manager.is_running(bot_name)
+    bot = registry.get_bot(bot_name)
+    is_running = _is_running(bot, manager)
     await status_msg.edit_text(
         f"✅ <b>{bot.get('display_name', bot_name)}</b> оновлено!\n\nЗапустіть бота щоб застосувати зміни.",
         parse_mode="HTML",

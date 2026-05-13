@@ -54,7 +54,10 @@ async def bot_info_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.answer("⛔ Нет доступа.", show_alert=True)
         return
 
-    is_running = manager.is_running(bot_name)
+    if bot.get("worker_id"):
+        is_running = bot.get("status") == "running"
+    else:
+        is_running = manager.is_running(bot_name)
     status = "🟢 Запущен" if is_running else "🔴 Остановлен"
     source = "🔗 Git" if bot.get("source") == "git" else "📦 ZIP"
     text = (

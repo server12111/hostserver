@@ -39,7 +39,8 @@ from handlers.bot_actions import (
     delete_bot_handler, confirm_delete_handler, logs_handler,
     config_view_handler, config_edit_entry, config_save_handler, cancel_config,
     packages_entry_handler, packages_install_handler, cancel_packages,
-    WAITING_PACKAGES, WAITING_CONFIG,
+    update_bot_handler, update_git_handler, update_zip_entry, receive_update_zip,
+    WAITING_PACKAGES, WAITING_CONFIG, WAITING_UPDATE_ZIP,
 )
 from handlers.files import files_list_handler, download_file_handler
 from handlers.payment import (
@@ -197,10 +198,24 @@ def build_app() -> Application:
         per_message=False,
     )
 
+    # ── ConversationHandler: оновлення ZIP ───────────────────────────────────
+    update_zip_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(update_zip_entry, pattern="^update_zip:")],
+        states={
+            WAITING_UPDATE_ZIP: [
+                MessageHandler(filters.Document.ZIP, receive_update_zip),
+                MessageHandler(filters.Document.ALL & ~filters.Document.ZIP, receive_update_zip),
+            ],
+        },
+        fallbacks=[CallbackQueryHandler(lambda u, c: ConversationHandler.END, pattern="^bot_info:")],
+        per_message=False,
+    )
+
     app.add_handler(add_bot_conv)
     app.add_handler(packages_conv)
     app.add_handler(config_conv)
     app.add_handler(add_worker_conv)
+    app.add_handler(update_zip_conv)
 
     # ── Команды ───────────────────────────────────────────────────────────────
     app.add_handler(CommandHandler("start", start_handler))
@@ -217,6 +232,8 @@ def build_app() -> Application:
     app.add_handler(CallbackQueryHandler(delete_bot_handler, pattern="^delete:"))
     app.add_handler(CallbackQueryHandler(confirm_delete_handler, pattern="^confirm_del:"))
     app.add_handler(CallbackQueryHandler(logs_handler, pattern="^logs:"))
+    app.add_handler(CallbackQueryHandler(update_bot_handler, pattern="^update_bot:"))
+    app.add_handler(CallbackQueryHandler(update_git_handler, pattern="^update_git:"))
     app.add_handler(CallbackQueryHandler(config_view_handler, pattern="^config:"))
     app.add_handler(CallbackQueryHandler(files_list_handler, pattern="^files:"))
     app.add_handler(CallbackQueryHandler(download_file_handler, pattern="^dl_file:"))

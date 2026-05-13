@@ -1,13 +1,17 @@
+import html
 import os
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ContextTypes
+from telegram.ext import ContextTypes, ConversationHandler
 
 from keyboards import (
     bot_detail_keyboard, delete_confirm_keyboard, logs_keyboard,
     packages_keyboard, config_keyboard, config_edit_keyboard,
+    update_source_keyboard,
 )
 import worker_client as wc
+
+WAITING_UPDATE_ZIP = 40
 
 
 def _get_worker(bot: dict, context) -> dict | None:
@@ -347,6 +351,123 @@ async def cancel_packages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(
         f"🤖 <b>{bot.get('display_name', bot_name)}</b>\n\n"
         f"Статус: {'🟢 Запущен' if is_running else '🔴 Остановлен'}",
+        parse_mode="HTML",
+        reply_markup=bot_detail_keyboard(bot_name, is_running),
+    )
+    return ConversationHandler.END
+
+
+# ─── Оновлення коду ───────────────────────────────────────────────────────────
+async def update_bot_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    bot_name = query.data.split(":", 1)[1]
+    registry = context.bot_data["registry"]
+    bot = registry.get_bot(bot_name)
+    if not bot or not _has_access(query.from_user.id, bot, context):
+        await query.answer("⛔ Нет доступа.", show_alert=True)
+        return
+    has_git = bool(bot.get("git_url"))
+    await query.edit_message_text(
+        f"🔄 <b>Оновити код: {bot.get('display_name', bot_name)}</b>\n\n"
+        "Оберіть спосіб оновлення:",
+        parse_mode="HTML",
+        reply_markup=update_source_keyboard(bot_name, has_git),
+    )
+
+
+async def update_git_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    bot_name = query.data.split(":", 1)[1]
+    registry = context.bot_data["registry"]
+    manager = context.bot_data["manager"]
+    bot = registry.get_bot(bot_name)
+    if not bot or not _has_access(query.from_user.id, bot, context):
+        await query.answer("⛔ Нет доступа.", show_alert=True)
+        return
+    git_url = bot.get("git_url", "")
+    if not git_url:
+        await query.answer("❌ Git URL не знайдено.", show_alert=True)
+        return
+    worker = _get_worker(bot, context)
+    if not worker:
+        await query.edit_message_text("❌ Воркер недоступний.", parse_mode="HTML",
+                                      reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data=f"bot_info:{bot_name}")]]))
+        return
+    await query.edit_message_text(
+        f"⏳ Оновлюю код <b>{bot.get('display_name', bot_name)}</b> з Git...",
+        parse_mode="HTML",
+    )
+    await wc.stop(worker, bot_name)
+    ok, result = await wc.deploy_git(worker, bot_name, git_url, bot.get("display_name", bot_name), bot.get("owner_id", 0))
+    if not ok:
+        await query.edit_message_text(
+            f"❌ Помилка оновлення:\n<code>{html.escape(result)}</code>",
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data=f"bot_info:{bot_name}")]]),
+        )
+        return
+    is_running = manager.is_running(bot_name)
+    await query.edit_message_text(
+        f"✅ <b>{bot.get('display_name', bot_name)}</b> оновлено!\n\nЗапустіть бота щоб застосувати зміни.",
+        parse_mode="HTML",
+        reply_markup=bot_detail_keyboard(bot_name, is_running),
+    )
+
+
+async def update_zip_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    bot_name = query.data.split(":", 1)[1]
+    registry = context.bot_data["registry"]
+    bot = registry.get_bot(bot_name)
+    if not bot or not _has_access(query.from_user.id, bot, context):
+        await query.answer("⛔ Нет доступа.", show_alert=True)
+        return ConversationHandler.END
+    context.user_data["update_for"] = bot_name
+    await query.edit_message_text(
+        f"📦 <b>Оновити {bot.get('display_name', bot_name)}</b>\n\n"
+        "Відправте новий <b>ZIP-архів</b> з кодом бота:",
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Скасувати", callback_data=f"bot_info:{bot_name}")]]),
+    )
+    return WAITING_UPDATE_ZIP
+
+
+async def receive_update_zip(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    bot_name = context.user_data.get("update_for")
+    if not bot_name:
+        return ConversationHandler.END
+    registry = context.bot_data["registry"]
+    manager = context.bot_data["manager"]
+    bot = registry.get_bot(bot_name)
+    if not bot:
+        await update.message.reply_text("❌ Бот не знайдений.")
+        return ConversationHandler.END
+    doc = update.message.document
+    if not doc or not doc.file_name.endswith(".zip"):
+        await update.message.reply_text("❌ Відправте файл у форматі .zip")
+        return WAITING_UPDATE_ZIP
+    worker = _get_worker(bot, context)
+    if not worker:
+        await update.message.reply_text("❌ Воркер недоступний.")
+        return ConversationHandler.END
+    status_msg = await update.message.reply_text("⏳ Завантажую та оновлюю код...")
+    tg_file = await doc.get_file()
+    zip_bytes = bytes(await tg_file.download_as_bytearray())
+    await wc.stop(worker, bot_name)
+    ok, result = await wc.deploy_zip(worker, bot_name, zip_bytes, bot.get("display_name", bot_name), bot.get("owner_id", 0))
+    if not ok:
+        await status_msg.edit_text(
+            f"❌ Помилка оновлення:\n<code>{html.escape(result)}</code>",
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data=f"bot_info:{bot_name}")]]),
+        )
+        return ConversationHandler.END
+    is_running = manager.is_running(bot_name)
+    await status_msg.edit_text(
+        f"✅ <b>{bot.get('display_name', bot_name)}</b> оновлено!\n\nЗапустіть бота щоб застосувати зміни.",
         parse_mode="HTML",
         reply_markup=bot_detail_keyboard(bot_name, is_running),
     )

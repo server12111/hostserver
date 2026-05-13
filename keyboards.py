@@ -58,9 +58,19 @@ def bot_detail_keyboard(bot_name: str, is_running: bool) -> InlineKeyboardMarkup
             InlineKeyboardButton("⚙️ Пакеты", callback_data=f"packages:{bot_name}"),
             InlineKeyboardButton("📁 Файлы", callback_data=f"files:{bot_name}"),
         ],
+        [InlineKeyboardButton("🔄 Оновити код", callback_data=f"update_bot:{bot_name}")],
         [InlineKeyboardButton("🗑 Удалить", callback_data=f"delete:{bot_name}")],
         [InlineKeyboardButton("🔙 Назад", callback_data="my_bots")],
     ])
+
+
+def update_source_keyboard(bot_name: str, has_git: bool) -> InlineKeyboardMarkup:
+    rows = []
+    if has_git:
+        rows.append([InlineKeyboardButton("🔗 Оновити з Git", callback_data=f"update_git:{bot_name}")])
+    rows.append([InlineKeyboardButton("📦 Завантажити новий ZIP", callback_data=f"update_zip:{bot_name}")])
+    rows.append([InlineKeyboardButton("❌ Скасувати", callback_data=f"bot_info:{bot_name}")])
+    return InlineKeyboardMarkup(rows)
 
 
 # ─── Подтверждение удаления ───────────────────────────────────────────────────

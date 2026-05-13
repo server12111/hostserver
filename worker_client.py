@@ -164,6 +164,17 @@ async def list_files(worker: dict, bot_name: str) -> list[str]:
         return []
 
 
+async def poll_events(worker: dict) -> list[dict]:
+    try:
+        async with aiohttp.ClientSession() as s:
+            r = await s.get(_url(worker, "/events"),
+                            headers=_headers(worker), timeout=_TIMEOUT_SHORT)
+            data = await r.json()
+            return data.get("events", [])
+    except Exception:
+        return []
+
+
 async def download_file(worker: dict, bot_name: str, fname: str) -> bytes | None:
     try:
         async with aiohttp.ClientSession() as s:

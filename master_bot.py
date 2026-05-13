@@ -79,6 +79,54 @@ async def admin_guard(update: Update, context) -> None:
         pass
 
 
+async def _worker_monitor(bot, bot_data: dict) -> None:
+    import worker_client as wc
+    await asyncio.sleep(90)  # ждём завершения startup sync
+    while True:
+        await asyncio.sleep(60)
+        wr = bot_data.get("worker_registry")
+        registry = bot_data.get("registry")
+        admin_ids = bot_data.get("admin_ids", set())
+        if not wr or not registry or not admin_ids:
+            continue
+        for worker in wr.list_workers():
+            try:
+                events = await wc.poll_events(worker)
+            except Exception:
+                continue
+            for ev in events:
+                bot_name = ev.get("bot_name", "")
+                ev_type = ev.get("event", "")
+                restarts = ev.get("restarts", 0)
+                reg_bot = registry.get_bot(bot_name)
+                display = reg_bot.get("display_name", bot_name) if reg_bot else bot_name
+
+                if ev_type == "restarted":
+                    text = (
+                        f"⚠️ <b>Бот упал и был перезапущен</b>\n\n"
+                        f"Бот: <b>{display}</b>\n"
+                        f"Воркер: <b>{worker['label']}</b>\n"
+                        f"Перезапуск #{restarts} из {3}"
+                    )
+                elif ev_type == "max_restarts":
+                    registry.update_bot(bot_name, status="stopped")
+                    text = (
+                        f"🔴 <b>Бот остановлен — превышен лимит перезапусков</b>\n\n"
+                        f"Бот: <b>{display}</b>\n"
+                        f"Воркер: <b>{worker['label']}</b>\n"
+                        f"Попыток перезапуска: {restarts}\n\n"
+                        f"Запустите бота вручную после исправления ошибки."
+                    )
+                else:
+                    continue
+
+                for admin_id in admin_ids:
+                    try:
+                        await bot.send_message(admin_id, text, parse_mode="HTML")
+                    except Exception:
+                        pass
+
+
 async def _sync_worker_states(bot_data: dict) -> None:
     import worker_client as wc
     wr = bot_data.get("worker_registry")
@@ -139,6 +187,7 @@ async def post_init(application: Application) -> None:
     application.bot_data["worker_registry"] = worker_registry
     manager.set_telegram_bot(application.bot)
     asyncio.create_task(_sync_worker_states(application.bot_data))
+    asyncio.create_task(_worker_monitor(application.bot, application.bot_data))
     asyncio.create_task(_renewal_reminder(application.bot, user_registry))
 
 

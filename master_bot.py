@@ -35,7 +35,7 @@ from handlers.add_bot import (
     WAITING_ZIP, WAITING_GIT_URL,
 )
 from handlers.bot_actions import (
-    start_bot_handler, stop_bot_handler,
+    start_bot_handler, stop_bot_handler, restart_bot_handler,
     delete_bot_handler, confirm_delete_handler, logs_handler,
     config_view_handler, config_edit_entry, config_save_handler, cancel_config,
     packages_entry_handler, packages_install_handler, cancel_packages,
@@ -54,7 +54,9 @@ from handlers.admin import (
     admin_worker_resources_handler, admin_worker_delete_handler,
     admin_add_worker_entry, admin_receive_worker_url,
     admin_receive_worker_secret, admin_cancel_worker,
-    WAITING_WORKER_URL, WAITING_WORKER_SECRET,
+    admin_download_db_handler, admin_upload_db_entry,
+    admin_receive_db_handler, admin_cancel_db,
+    WAITING_WORKER_URL, WAITING_WORKER_SECRET, WAITING_DB_FILE,
 )
 from worker_registry import WorkerRegistry
 
@@ -211,11 +213,24 @@ def build_app() -> Application:
         per_message=False,
     )
 
+    # ── ConversationHandler: загрузка БД ─────────────────────────────────────
+    upload_db_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(admin_upload_db_entry, pattern="^admin_upload_db$")],
+        states={
+            WAITING_DB_FILE: [
+                MessageHandler(filters.Document.ALL, admin_receive_db_handler),
+            ],
+        },
+        fallbacks=[CallbackQueryHandler(admin_cancel_db, pattern="^admin_menu$")],
+        per_message=False,
+    )
+
     app.add_handler(add_bot_conv)
     app.add_handler(packages_conv)
     app.add_handler(config_conv)
     app.add_handler(add_worker_conv)
     app.add_handler(update_zip_conv)
+    app.add_handler(upload_db_conv)
 
     # ── Команды ───────────────────────────────────────────────────────────────
     app.add_handler(CommandHandler("start", start_handler))
@@ -229,6 +244,7 @@ def build_app() -> Application:
     # ── Действия с ботом ──────────────────────────────────────────────────────
     app.add_handler(CallbackQueryHandler(start_bot_handler, pattern="^start_bot:"))
     app.add_handler(CallbackQueryHandler(stop_bot_handler, pattern="^stop_bot:"))
+    app.add_handler(CallbackQueryHandler(restart_bot_handler, pattern="^restart_bot:"))
     app.add_handler(CallbackQueryHandler(delete_bot_handler, pattern="^delete:"))
     app.add_handler(CallbackQueryHandler(confirm_delete_handler, pattern="^confirm_del:"))
     app.add_handler(CallbackQueryHandler(logs_handler, pattern="^logs:"))
@@ -256,6 +272,7 @@ def build_app() -> Application:
     app.add_handler(CallbackQueryHandler(admin_worker_detail_handler, pattern="^admin_worker:"))
     app.add_handler(CallbackQueryHandler(admin_worker_resources_handler, pattern="^admin_worker_res:"))
     app.add_handler(CallbackQueryHandler(admin_worker_delete_handler, pattern="^admin_worker_del:"))
+    app.add_handler(CallbackQueryHandler(admin_download_db_handler, pattern="^admin_download_db$"))
 
     app.add_error_handler(error_handler)
     return app

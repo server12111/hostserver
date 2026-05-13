@@ -49,7 +49,7 @@ def bot_detail_keyboard(bot_name: str, is_running: bool) -> InlineKeyboardMarkup
         InlineKeyboardButton("▶️ Запустить", callback_data=f"start_bot:{bot_name}")
     )
     return InlineKeyboardMarkup([
-        [action],
+        [action, InlineKeyboardButton("🔄 Перезапустить", callback_data=f"restart_bot:{bot_name}")],
         [
             InlineKeyboardButton("📋 Логи", callback_data=f"logs:{bot_name}"),
             InlineKeyboardButton("📝 Конфиг", callback_data=f"config:{bot_name}"),
@@ -58,7 +58,7 @@ def bot_detail_keyboard(bot_name: str, is_running: bool) -> InlineKeyboardMarkup
             InlineKeyboardButton("⚙️ Пакеты", callback_data=f"packages:{bot_name}"),
             InlineKeyboardButton("📁 Файлы", callback_data=f"files:{bot_name}"),
         ],
-        [InlineKeyboardButton("🔄 Оновити код", callback_data=f"update_bot:{bot_name}")],
+        [InlineKeyboardButton("🔄 Обновить код", callback_data=f"update_bot:{bot_name}")],
         [InlineKeyboardButton("🗑 Удалить", callback_data=f"delete:{bot_name}")],
         [InlineKeyboardButton("🔙 Назад", callback_data="my_bots")],
     ])
@@ -189,6 +189,10 @@ def admin_menu_keyboard() -> InlineKeyboardMarkup:
         [
             InlineKeyboardButton("📊 Ресурсы", callback_data="admin_resources"),
             InlineKeyboardButton("🖥 Воркеры", callback_data="admin_workers"),
+        ],
+        [
+            InlineKeyboardButton("📥 Скачать БД", callback_data="admin_download_db"),
+            InlineKeyboardButton("📤 Загрузить БД", callback_data="admin_upload_db"),
         ],
         [InlineKeyboardButton("🔙 Назад", callback_data="menu")],
     ])

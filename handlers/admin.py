@@ -1,3 +1,7 @@
+import io
+import json
+import os
+
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
 
@@ -10,6 +14,7 @@ import worker_client as wc
 
 WAITING_WORKER_URL = 30
 WAITING_WORKER_SECRET = 31
+WAITING_DB_FILE = 32
 
 
 def _is_admin(user_id: int, context) -> bool:
@@ -284,6 +289,94 @@ async def admin_cancel_worker(update: Update, context: ContextTypes.DEFAULT_TYPE
     query = update.callback_query
     await query.answer()
     await admin_workers_handler(update, context)
+    return ConversationHandler.END
+
+
+# ─── База данных: скачать ─────────────────────────────────────────────────────
+async def admin_download_db_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    if not _is_admin(query.from_user.id, context):
+        return
+    await query.edit_message_text(
+        "📥 Отправляю файлы базы данных...",
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔙 Назад", callback_data="admin_menu")]
+        ]),
+    )
+    for fname in ("bots_registry.json", "users_registry.json"):
+        if os.path.exists(fname):
+            with open(fname, "rb") as f:
+                data = f.read()
+            await context.bot.send_document(
+                chat_id=query.from_user.id,
+                document=io.BytesIO(data),
+                filename=fname,
+                caption=f"📄 {fname}",
+            )
+
+
+# ─── База данных: загрузить ───────────────────────────────────────────────────
+async def admin_upload_db_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    if not _is_admin(query.from_user.id, context):
+        return
+    await query.edit_message_text(
+        "📤 <b>Загрузить базу данных</b>\n\n"
+        "Отправьте файл <code>bots_registry.json</code> или <code>users_registry.json</code>.\n\n"
+        "⚠️ Файл полностью заменит текущую базу данных.",
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("❌ Отмена", callback_data="admin_menu")]
+        ]),
+    )
+    return WAITING_DB_FILE
+
+
+async def admin_receive_db_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not _is_admin(update.effective_user.id, context):
+        return ConversationHandler.END
+    doc = update.message.document
+    allowed = ("bots_registry.json", "users_registry.json")
+    if not doc or not doc.file_name.endswith(".json"):
+        await update.message.reply_text("❌ Отправьте файл в формате .json")
+        return WAITING_DB_FILE
+    if doc.file_name not in allowed:
+        await update.message.reply_text(
+            f"❌ Неверное имя файла.\n"
+            f"Допустимые: <code>bots_registry.json</code>, <code>users_registry.json</code>",
+            parse_mode="HTML",
+        )
+        return WAITING_DB_FILE
+    tg_file = await doc.get_file()
+    data_bytes = bytes(await tg_file.download_as_bytearray())
+    try:
+        data = json.loads(data_bytes)
+    except Exception:
+        await update.message.reply_text("❌ Файл повреждён — не удалось разобрать JSON.")
+        return WAITING_DB_FILE
+    with open(doc.file_name, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    if doc.file_name == "bots_registry.json":
+        context.bot_data["registry"]._load()
+    else:
+        context.bot_data["user_registry"]._load()
+    await update.message.reply_text(
+        f"✅ База данных <code>{doc.file_name}</code> успешно загружена и применена.",
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔙 В меню", callback_data="admin_menu")]
+        ]),
+    )
+    return ConversationHandler.END
+
+
+async def admin_cancel_db(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    await admin_command_handler(update, context)
     return ConversationHandler.END
 
 

@@ -357,6 +357,43 @@ async def cancel_packages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 
+# ─── Перезапуск ───────────────────────────────────────────────────────────────
+async def restart_bot_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    bot_name = query.data.split(":", 1)[1]
+    user_id = query.from_user.id
+    registry = context.bot_data["registry"]
+    manager = context.bot_data["manager"]
+    bot = registry.get_bot(bot_name)
+    if not bot or not _has_access(user_id, bot, context):
+        await query.answer("⛔ Нет доступа.", show_alert=True)
+        return
+    await query.edit_message_text(
+        f"🔄 Перезапускаю <b>{bot.get('display_name', bot_name)}</b>...",
+        parse_mode="HTML",
+    )
+    worker = _get_worker(bot, context)
+    if worker:
+        await wc.stop(worker, bot_name)
+        ok, msg = await wc.start(worker, bot_name)
+        if ok:
+            registry.update_bot(bot_name, status="running")
+    else:
+        manager.stop_bot(bot_name)
+        ok, msg = manager.start_bot(bot_name)
+        if ok:
+            manager.schedule_watch(bot_name)
+    is_running = manager.is_running(bot_name)
+    await query.edit_message_text(
+        f"🤖 <b>{bot.get('display_name', bot_name)}</b>\n\n"
+        f"Статус: {'🟢 Запущен' if is_running else '🔴 Остановлен'}\n\n"
+        f"{'✅ Перезапущен' if ok else '❌ ' + _esc(msg)}",
+        parse_mode="HTML",
+        reply_markup=bot_detail_keyboard(bot_name, is_running),
+    )
+
+
 # ─── Оновлення коду ───────────────────────────────────────────────────────────
 async def update_bot_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query

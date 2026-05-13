@@ -29,7 +29,7 @@ async def health(worker: dict) -> dict:
     try:
         async with _session() as s:
             r = await s.get(_url(worker, "/health"), headers=_headers(worker),
-                            timeout=aiohttp.ClientTimeout(total=10))
+                            timeout=aiohttp.ClientTimeout(total=20))
             if r.status == 200:
                 return await r.json()
             return {"ok": False, "error": f"HTTP {r.status}"}

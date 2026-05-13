@@ -3,7 +3,9 @@ import os
 import threading
 from datetime import datetime
 
-USERS_FILE = "users_registry.json"
+_DATA_DIR = os.getenv("DATA_DIR", "/app/data")
+os.makedirs(_DATA_DIR, exist_ok=True)
+USERS_FILE = os.path.join(_DATA_DIR, "users_registry.json")
 
 
 class UserRegistry:

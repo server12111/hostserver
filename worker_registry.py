@@ -3,7 +3,9 @@ import os
 import threading
 from datetime import datetime
 
-WORKERS_FILE = "workers_registry.json"
+_DATA_DIR = os.getenv("DATA_DIR", "/app/data")
+os.makedirs(_DATA_DIR, exist_ok=True)
+WORKERS_FILE = os.path.join(_DATA_DIR, "workers_registry.json")
 
 
 class WorkerRegistry:

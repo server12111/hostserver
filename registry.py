@@ -3,7 +3,9 @@ import os
 import threading
 from datetime import datetime
 
-REGISTRY_FILE = "bots_registry.json"
+_DATA_DIR = os.getenv("DATA_DIR", "/app/data")
+os.makedirs(_DATA_DIR, exist_ok=True)
+REGISTRY_FILE = os.path.join(_DATA_DIR, "bots_registry.json")
 
 
 class RegistryManager:

@@ -29,12 +29,12 @@ async def health(worker: dict) -> dict:
     try:
         async with _session() as s:
             r = await s.get(_url(worker, "/health"), headers=_headers(worker),
-                            timeout=aiohttp.ClientTimeout(total=5))
+                            timeout=aiohttp.ClientTimeout(total=10))
             if r.status == 200:
                 return await r.json()
             return {"ok": False, "error": f"HTTP {r.status}"}
     except Exception as e:
-        return {"ok": False, "error": str(e)}
+        return {"ok": False, "error": str(e) or type(e).__name__}
 
 
 async def deploy_zip(worker: dict, bot_name: str, zip_bytes: bytes,
@@ -54,7 +54,7 @@ async def deploy_zip(worker: dict, bot_name: str, zip_bytes: bytes,
                 return True, data.get("entry_point", "main.py")
             return False, data.get("error", "Ошибка деплоя")
     except Exception as e:
-        return False, str(e)
+        return False, str(e) or type(e).__name__
 
 
 async def deploy_git(worker: dict, bot_name: str, git_url: str,
@@ -70,7 +70,7 @@ async def deploy_git(worker: dict, bot_name: str, git_url: str,
                 return True, data.get("entry_point", "main.py")
             return False, data.get("error", "Ошибка деплоя")
     except Exception as e:
-        return False, str(e)
+        return False, str(e) or type(e).__name__
 
 
 async def start(worker: dict, bot_name: str) -> tuple[bool, str]:
@@ -82,7 +82,7 @@ async def start(worker: dict, bot_name: str) -> tuple[bool, str]:
             data = await r.json()
             return data.get("ok", False), data.get("msg", "")
     except Exception as e:
-        return False, str(e)
+        return False, str(e) or type(e).__name__
 
 
 async def stop(worker: dict, bot_name: str) -> tuple[bool, str]:
@@ -93,7 +93,7 @@ async def stop(worker: dict, bot_name: str) -> tuple[bool, str]:
             data = await r.json()
             return data.get("ok", False), data.get("msg", "")
     except Exception as e:
-        return False, str(e)
+        return False, str(e) or type(e).__name__
 
 
 async def delete(worker: dict, bot_name: str) -> tuple[bool, str]:
@@ -104,7 +104,7 @@ async def delete(worker: dict, bot_name: str) -> tuple[bool, str]:
             data = await r.json()
             return data.get("ok", False), data.get("msg", "Удалён")
     except Exception as e:
-        return False, str(e)
+        return False, str(e) or type(e).__name__
 
 
 async def logs(worker: dict, bot_name: str, n: int = 30) -> str:
@@ -116,7 +116,7 @@ async def logs(worker: dict, bot_name: str, n: int = 30) -> str:
             data = await r.json()
             return data.get("logs", "(нет логов)")
     except Exception as e:
-        return f"(ошибка связи с воркером: {e})"
+        return f"(ошибка связи с воркером: {str(e) or type(e).__name__})"
 
 
 async def resources(worker: dict) -> list[dict]:
@@ -139,7 +139,7 @@ async def install(worker: dict, bot_name: str, packages: list[str]) -> tuple[boo
             data = await r.json()
             return data.get("ok", False), data.get("msg", "")
     except Exception as e:
-        return False, str(e)
+        return False, str(e) or type(e).__name__
 
 
 async def get_config(worker: dict, bot_name: str) -> str:
@@ -162,7 +162,7 @@ async def save_config(worker: dict, bot_name: str, content: str) -> tuple[bool, 
             data = await r.json()
             return data.get("ok", False), data.get("msg", "")
     except Exception as e:
-        return False, str(e)
+        return False, str(e) or type(e).__name__
 
 
 async def list_files(worker: dict, bot_name: str) -> list[str]:

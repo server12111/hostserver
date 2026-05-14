@@ -88,11 +88,13 @@ async def poll_invoice(
             else:
                 base = datetime.now()
             new_until = base + timedelta(days=plan["days"])
+            sent = [t for t in u.get("sent_triggers", []) if not t.startswith("wb_")]
             user_registry.update_user(
                 user_id,
                 subscription_until=new_until.isoformat(timespec="seconds"),
                 max_bots=u.get("max_bots", 0) + plan["bots"],
                 plan=plan_key,
+                sent_triggers=sent,
             )
             try:
                 await bot.send_message(
@@ -212,11 +214,13 @@ async def _activate_plan(user_id: int, plan_key: str, plan: dict, bot, user_regi
     sub = u.get("subscription_until")
     base = datetime.fromisoformat(sub) if sub and datetime.fromisoformat(sub) > datetime.now() else datetime.now()
     new_until = base + timedelta(days=plan["days"])
+    sent = [t for t in u.get("sent_triggers", []) if not t.startswith("wb_")]
     user_registry.update_user(
         user_id,
         subscription_until=new_until.isoformat(timespec="seconds"),
         max_bots=u.get("max_bots", 0) + plan["bots"],
         plan=plan_key,
+        sent_triggers=sent,
     )
     try:
         await bot.send_message(

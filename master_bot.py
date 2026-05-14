@@ -195,6 +195,147 @@ async def _renewal_reminder(bot, user_registry):
                 pass
 
 
+async def _send_trigger(bot, chat_id: int, text: str, markup=None) -> bool:
+    try:
+        await bot.send_message(chat_id=chat_id, text=text, parse_mode="HTML", reply_markup=markup)
+        return True
+    except Exception:
+        return False
+
+
+async def _trigger_messages(bot, bot_data: dict) -> None:
+    """Onboarding + win-back triggers. Skips users with active subscription."""
+    await asyncio.sleep(240)
+    while True:
+        await asyncio.sleep(3600)
+        user_registry = bot_data.get("user_registry")
+        registry = bot_data.get("registry")
+        admin_ids = bot_data.get("admin_ids", set())
+        if not user_registry or not registry:
+            continue
+        now = datetime.now()
+        plans_kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🖥 Купить хостинг", callback_data="plans")]
+        ])
+        for u in user_registry.list_users():
+            if u["user_id"] in admin_ids:
+                continue
+            sub = u.get("subscription_until")
+            # Skip users with active subscription
+            if sub and datetime.fromisoformat(sub) > now:
+                continue
+            user_id = u["user_id"]
+            sent = set(u.get("sent_triggers", []))
+            reg = u.get("registered_at")
+            if not reg:
+                continue
+            try:
+                reg_dt = datetime.fromisoformat(reg)
+            except Exception:
+                continue
+            days_since_reg = (now - reg_dt).days
+            user_bots = registry.list_bots_by_owner(user_id)
+            new_triggers = set()
+
+            # ── Онбординг (никогда не платил) ──────────────────────────────
+            if not sub:
+                if days_since_reg >= 1 and "ob_day1" not in sent and not user_bots:
+                    if await _send_trigger(
+                        bot, user_id,
+                        "👋 <b>Нужна помощь с первым ботом?</b>\n\n"
+                        "Загрузите <b>ZIP-архив</b> или вставьте Git-ссылку —\n"
+                        "запустим за 30 секунд.\n\n"
+                        "Купите хостинг и добавьте первого бота прямо сейчас.",
+                        plans_kb,
+                    ):
+                        new_triggers.add("ob_day1")
+
+                elif days_since_reg >= 3 and "ob_day3" not in sent and user_bots:
+                    if await _send_trigger(
+                        bot, user_id,
+                        "⚡ <b>Ваш бот ждёт запуска</b>\n\n"
+                        "Вы добавили бота, но ещё не купили хостинг.\n\n"
+                        "Запустите прямо сейчас — от <b>2$ в месяц</b>.",
+                        plans_kb,
+                    ):
+                        new_triggers.add("ob_day3")
+
+                elif days_since_reg >= 7 and "ob_day7" not in sent:
+                    if await _send_trigger(
+                        bot, user_id,
+                        "🎁 <b>Специальное предложение</b>\n\n"
+                        "Хостинг для Telegram-бота — от <b>2$ в месяц</b>.\n"
+                        "Никаких скрытых платежей. Запустите за пару минут.",
+                        plans_kb,
+                    ):
+                        new_triggers.add("ob_day7")
+
+            # ── Win-back (подписка истекла) ─────────────────────────────────
+            if sub:
+                try:
+                    exp_dt = datetime.fromisoformat(sub)
+                except Exception:
+                    continue
+                if exp_dt >= now:
+                    continue
+                days_expired = (now - exp_dt).days
+
+                if days_expired >= 3 and "wb_day3" not in sent:
+                    if await _send_trigger(
+                        bot, user_id,
+                        "😔 <b>Ваш бот остановлен уже 3 дня</b>\n\n"
+                        "Все файлы и настройки сохранены.\n\n"
+                        "Возобновите хостинг — бот снова заработает.",
+                        plans_kb,
+                    ):
+                        new_triggers.add("wb_day3")
+
+                elif days_expired >= 7 and "wb_day7" not in sent:
+                    if await _send_trigger(
+                        bot, user_id,
+                        "⏰ <b>Прошла неделя</b>\n\n"
+                        "Ваш бот не работает уже <b>7 дней</b>.\n"
+                        "Файлы в сохранности — просто продлите хостинг.",
+                        plans_kb,
+                    ):
+                        new_triggers.add("wb_day7")
+
+                elif days_expired >= 14 and "wb_day14" not in sent:
+                    if await _send_trigger(
+                        bot, user_id,
+                        "⚠️ <b>2 недели без хостинга</b>\n\n"
+                        "Ваш бот всё ещё ждёт вас.\n"
+                        "Продлите — и продолжите с того места, где остановились.",
+                        plans_kb,
+                    ):
+                        new_triggers.add("wb_day14")
+
+                elif days_expired >= 30 and "wb_day30" not in sent:
+                    if await _send_trigger(
+                        bot, user_id,
+                        "🔴 <b>Месяц без хостинга</b>\n\n"
+                        "Возвращайтесь — все данные вашего бота сохранены.",
+                        plans_kb,
+                    ):
+                        new_triggers.add("wb_day30")
+
+                elif days_expired >= 60 and "wb_day60" not in sent:
+                    if await _send_trigger(
+                        bot, user_id,
+                        "💔 <b>Мы скучаем</b>\n\n"
+                        "2 месяца без активного бота.\n\n"
+                        "Возвращайтесь — всё ещё можно восстановить.",
+                        plans_kb,
+                    ):
+                        new_triggers.add("wb_day60")
+
+            if new_triggers:
+                user_registry.update_user(
+                    user_id,
+                    sent_triggers=list(sent | new_triggers),
+                )
+
+
 async def _subscription_enforcer(bot, bot_data: dict) -> None:
     import worker_client as wc
     await asyncio.sleep(120)
@@ -278,6 +419,7 @@ async def post_init(application: Application) -> None:
     asyncio.create_task(_worker_monitor(application.bot, application.bot_data))
     asyncio.create_task(_renewal_reminder(application.bot, user_registry))
     asyncio.create_task(_subscription_enforcer(application.bot, application.bot_data))
+    asyncio.create_task(_trigger_messages(application.bot, application.bot_data))
 
 
 async def post_shutdown(application: Application) -> None:

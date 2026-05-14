@@ -649,30 +649,58 @@ async def admin_stats_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     user_registry = context.bot_data["user_registry"]
     registry = context.bot_data["registry"]
     manager = context.bot_data["manager"]
+    wr = context.bot_data.get("worker_registry")
+    workers = wr.list_workers() if wr else []
+
     users = user_registry.list_users()
     now = datetime.now()
+    thirty_days_ago = now - timedelta(days=30)
+
     active_subs = [
         u for u in users
         if u.get("subscription_until") and datetime.fromisoformat(u["subscription_until"]) > now
     ]
+    ever_paid = [u for u in users if u.get("subscription_until")]
+    new_users_30d = sum(
+        1 for u in users
+        if u.get("registered_at") and datetime.fromisoformat(u["registered_at"]) > thirty_days_ago
+    )
+    churned_30d = sum(
+        1 for u in users
+        if u.get("subscription_until")
+        and thirty_days_ago < datetime.fromisoformat(u["subscription_until"]) < now
+    )
+    conversion = round(len(ever_paid) / len(users) * 100) if users else 0
+
     all_bots = registry.list_bots()
     running_bots = [
         b for b in all_bots
         if (b.get("worker_id") and b.get("status") == "running")
         or (not b.get("worker_id") and manager.is_running(b["name"]))
     ]
+
     monthly_revenue = sum(
         PLANS.get(u.get("plan", ""), {}).get("price", 0)
-        for u in active_subs
-        if u.get("plan")
+        for u in active_subs if u.get("plan")
     )
+    worker_cost = len(workers) * 0.15
+    monthly_profit = monthly_revenue - worker_cost
+    margin = round(monthly_profit / monthly_revenue * 100) if monthly_revenue > 0 else 0
+
+    profit_sign = "+" if monthly_profit >= 0 else ""
     await query.edit_message_text(
         f"{pe('stats', '📊')} <b>Статистика</b>\n\n"
-        f"👥 Пользователей: <b>{len(users)}</b>\n"
-        f"🟢 Активных подписок: <b>{len(active_subs)}</b>\n"
-        f"🤖 Всего ботов: <b>{len(all_bots)}</b>\n"
-        f"▶️ Запущено: <b>{len(running_bots)}</b>\n\n"
-        f"💰 Доход в месяц: ~<b>{monthly_revenue:.1f} USDT</b>",
+        f"<b>👥 Пользователи</b>\n"
+        f"  Всего: <b>{len(users)}</b> | Новых за 30д: <b>{new_users_30d}</b>\n"
+        f"  Активных подписок: <b>{len(active_subs)}</b>\n"
+        f"  Отток за 30д: <b>{churned_30d}</b> | Конверсия: <b>{conversion}%</b>\n\n"
+        f"<b>🤖 Боты</b>\n"
+        f"  Всего: <b>{len(all_bots)}</b> | Запущено: <b>{len(running_bots)}</b>\n\n"
+        f"<b>💰 Финансы (в месяц)</b>\n"
+        f"  Доход: <b>{monthly_revenue:.2f} USDT</b>\n"
+        f"  Воркеры: <b>{len(workers)} × $0.15 = {worker_cost:.2f} USDT</b>\n"
+        f"  Прибыль: <b>{profit_sign}{monthly_profit:.2f} USDT</b>\n"
+        f"  Маржа: <b>{margin}%</b>",
         parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("🔄 Обновить", callback_data="admin_stats")],

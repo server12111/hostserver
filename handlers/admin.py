@@ -11,6 +11,13 @@ from keyboards import (
     workers_keyboard, worker_detail_keyboard, pe,
 )
 import worker_client as wc
+from registry import REGISTRY_FILE
+from user_registry import USERS_FILE
+
+_DB_FILES = {
+    "bots_registry.json": REGISTRY_FILE,
+    "users_registry.json": USERS_FILE,
+}
 
 WAITING_WORKER_URL = 30
 WAITING_WORKER_SECRET = 31
@@ -314,9 +321,9 @@ async def admin_download_db_handler(update: Update, context: ContextTypes.DEFAUL
             [InlineKeyboardButton("◀️ Назад", callback_data="admin_menu")]
         ]),
     )
-    for fname in ("bots_registry.json", "users_registry.json"):
-        if os.path.exists(fname):
-            with open(fname, "rb") as f:
+    for fname, fpath in _DB_FILES.items():
+        if os.path.exists(fpath):
+            with open(fpath, "rb") as f:
                 data = f.read()
             await context.bot.send_document(
                 chat_id=query.from_user.id,
@@ -366,7 +373,8 @@ async def admin_receive_db_handler(update: Update, context: ContextTypes.DEFAULT
     except Exception:
         await update.message.reply_text("❌ Файл повреждён — не удалось разобрать JSON.")
         return WAITING_DB_FILE
-    with open(doc.file_name, "w", encoding="utf-8") as f:
+    fpath = _DB_FILES[doc.file_name]
+    with open(fpath, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
     if doc.file_name == "bots_registry.json":
         context.bot_data["registry"]._load()

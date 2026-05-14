@@ -11,7 +11,7 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
     sys.stderr.reconfigure(encoding="utf-8")
 
 from dotenv import load_dotenv
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
     ApplicationHandlerStop,
@@ -153,7 +153,6 @@ async def _sync_worker_states(bot_data: dict) -> None:
 
 
 async def _renewal_reminder(bot, user_registry):
-    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
     while True:
         await asyncio.sleep(3600)
         now = datetime.now()
@@ -196,6 +195,73 @@ async def _renewal_reminder(bot, user_registry):
                 pass
 
 
+async def _subscription_enforcer(bot, bot_data: dict) -> None:
+    import worker_client as wc
+    await asyncio.sleep(120)
+    while True:
+        await asyncio.sleep(3600)
+        user_registry = bot_data.get("user_registry")
+        registry = bot_data.get("registry")
+        manager = bot_data.get("manager")
+        wr = bot_data.get("worker_registry")
+        admin_ids = bot_data.get("admin_ids", set())
+        if not all([user_registry, registry, manager]):
+            continue
+        now = datetime.now()
+        for u in user_registry.list_users():
+            if u["user_id"] in admin_ids:
+                continue
+            sub = u.get("subscription_until")
+            if not sub:
+                continue
+            if datetime.fromisoformat(sub) >= now:
+                continue
+            user_id = u["user_id"]
+            user_bots = registry.list_bots_by_owner(user_id)
+            stopped = []
+            for bot_rec in user_bots:
+                bot_name = bot_rec["name"]
+                display = bot_rec.get("display_name", bot_name)
+                worker_id = bot_rec.get("worker_id")
+                if worker_id:
+                    if bot_rec.get("status") != "running":
+                        continue
+                    w = wr.get_worker(worker_id) if wr else None
+                    if w:
+                        try:
+                            await wc.stop(w, bot_name)
+                        except Exception:
+                            pass
+                    registry.update_bot(bot_name, status="stopped")
+                    stopped.append(display)
+                else:
+                    if not manager.is_running(bot_name):
+                        continue
+                    try:
+                        manager.stop_bot(bot_name)
+                    except Exception:
+                        pass
+                    stopped.append(display)
+            if stopped:
+                lines = "\n".join(f"• {n}" for n in stopped)
+                try:
+                    await bot.send_message(
+                        chat_id=user_id,
+                        text=(
+                            f"🔴 <b>Подписка истекла — боты остановлены</b>\n\n"
+                            f"Остановлено: <b>{len(stopped)}</b>\n"
+                            f"{lines}\n\n"
+                            f"Продлите хостинг, чтобы возобновить работу ботов."
+                        ),
+                        parse_mode="HTML",
+                        reply_markup=InlineKeyboardMarkup([
+                            [InlineKeyboardButton("🖥 Продлить хостинг", callback_data="plans")]
+                        ]),
+                    )
+                except Exception:
+                    pass
+
+
 async def post_init(application: Application) -> None:
     registry = RegistryManager()
     registry.restore_running_bots()
@@ -211,6 +277,7 @@ async def post_init(application: Application) -> None:
     asyncio.create_task(_sync_worker_states(application.bot_data))
     asyncio.create_task(_worker_monitor(application.bot, application.bot_data))
     asyncio.create_task(_renewal_reminder(application.bot, user_registry))
+    asyncio.create_task(_subscription_enforcer(application.bot, application.bot_data))
 
 
 async def post_shutdown(application: Application) -> None:

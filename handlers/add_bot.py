@@ -8,7 +8,7 @@ import zipfile
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
 
-from keyboards import sanitize_bot_name, make_bot_key, add_source_keyboard, bot_detail_keyboard
+from keyboards import sanitize_bot_name, make_bot_key, add_source_keyboard, bot_detail_keyboard, pe
 import worker_client
 
 WAITING_ZIP = 1
@@ -34,32 +34,32 @@ async def add_bot_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
         max_bots = u.get("max_bots", 0) if u else 0
         if max_bots > 0 and bots_count >= max_bots:
             msg = (
-                "🖥 <b>Все слоты заняты</b>\n\n"
+                f"{pe('lock', '🖥')} <b>Все слоты заняты</b>\n\n"
                 f"У вас {bots_count} из {max_bots} ботов.\n\n"
-                "Купите ещё один хостинг-слот\nчтобы добавить нового бота."
+                "Купите ещё один хостинг-слот,\nчтобы добавить нового бота."
             )
         else:
             msg = (
-                "🖥 <b>Необходим хостинг</b>\n\n"
-                "▸ 1 бот · 2 ГБ RAM · 10 ГБ диск\n"
-                "▸ 3 USDT / 30 дней\n\n"
+                f"{pe('lock', '🖥')} <b>Необходим хостинг</b>\n\n"
+                f"▸ 1 бот · 2 ГБ RAM · 10 ГБ диск\n"
+                f"▸ 3 USDT / 30 дней\n\n"
                 "Купите хостинг — и сразу сможете\nдобавить своего бота."
             )
         await query.edit_message_text(
             msg, parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("🖥 Купить хостинг", callback_data="plans")],
-                [InlineKeyboardButton("🔙 Назад", callback_data="menu")],
+                [InlineKeyboardButton("🛒 Купить хостинг", callback_data="plans")],
+                [InlineKeyboardButton("🏠 Главное меню", callback_data="menu")],
             ]),
         )
         return ConversationHandler.END
 
     await query.edit_message_text(
-        "➕ <b>Добавить бота</b>\n\nВыберите способ загрузки:",
+        f"{pe('upload', '⬆️')} <b>Добавить бота</b>\n\nВыберите способ загрузки:",
         parse_mode="HTML",
         reply_markup=add_source_keyboard(),
     )
-    return WAITING_ZIP  # ждём выбор ZIP или Git
+    return WAITING_ZIP
 
 
 # ─── Выбор ZIP ────────────────────────────────────────────────────────────────
@@ -67,7 +67,8 @@ async def add_zip_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     await query.edit_message_text(
-        "📦 Отправьте <b>ZIP-архив</b> с вашим Python-ботом.\n\n"
+        f"{pe('package', '📦')} <b>Загрузка ZIP-архива</b>\n\n"
+        "Отправьте <b>ZIP-архив</b> с вашим Python-ботом.\n\n"
         "Архив должен содержать <code>main.py</code> или <code>bot.py</code> "
         "и опционально <code>requirements.txt</code>.",
         parse_mode="HTML",
@@ -80,11 +81,12 @@ async def add_git_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     await query.edit_message_text(
-        "🔗 Отправьте <b>URL Git-репозитория</b>:\n\n"
+        f"{pe('info', '🔗')} <b>Загрузка из Git</b>\n\n"
+        "Отправьте <b>URL Git-репозитория</b>:\n\n"
         "<code>https://github.com/user/mybot</code>",
         parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("❌ Отмена", callback_data="menu")]
+            [InlineKeyboardButton("✖️ Отмена", callback_data="menu")]
         ]),
     )
     return WAITING_GIT_URL
@@ -101,7 +103,10 @@ async def receive_zip(update: Update, context: ContextTypes.DEFAULT_TYPE):
     display_name = sanitize_bot_name(os.path.splitext(doc.file_name)[0])
     bot_name = _unique_name(make_bot_key(display_name, user_id), registry)
 
-    status_msg = await update.message.reply_text("⏳ Загружаю архив...")
+    status_msg = await update.message.reply_text(
+        f"{pe('loading', '⏳')} Загружаю архив...",
+        parse_mode="HTML",
+    )
     tg_file = await doc.get_file()
     zip_bytes = await tg_file.download_as_bytearray()
 
@@ -131,7 +136,7 @@ async def receive_git_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
     bot_name = _unique_name(make_bot_key(display_name, user_id), registry)
 
     status_msg = await update.message.reply_text(
-        f"⏳ Клонирую репозиторий <code>{git_url}</code>...",
+        f"{pe('loading', '⏳')} Клонирую репозиторий <code>{git_url}</code>...",
         parse_mode="HTML",
     )
 
@@ -215,9 +220,8 @@ async def _finalize_bot(
     chosen_worker = await _pick_worker(context)
 
     if chosen_worker:
-        # ── Деплой на воркер ──────────────────────────────────────────────────
         await status_msg.edit_text(
-            f"⏳ Деплою бота <b>{display_name}</b> на воркер <b>{chosen_worker['label']}</b>...",
+            f"{pe('loading', '⏳')} Деплою бота <b>{display_name}</b> на <b>{chosen_worker['label']}</b>...",
             parse_mode="HTML",
         )
         if source == "zip":
@@ -230,10 +234,10 @@ async def _finalize_bot(
             )
         if not ok:
             await status_msg.edit_text(
-                f"❌ Ошибка деплоя на воркер:\n<code>{html.escape(entry_point)}</code>",
+                f"{pe('cross', '❌')} <b>Ошибка деплоя:</b>\n<code>{html.escape(entry_point)}</code>",
                 parse_mode="HTML",
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("🔙 Назад", callback_data="menu")]
+                    [InlineKeyboardButton("🏠 Главное меню", callback_data="menu")]
                 ]),
             )
             return ConversationHandler.END
@@ -249,7 +253,8 @@ async def _finalize_bot(
         user_registry.add_bot_to_user(user_id, bot_name)
         await _notify_global_load(context, bots_before_global)
         await status_msg.edit_text(
-            f"✅ Бот <b>{display_name}</b> задеплоен на <b>{chosen_worker['label']}</b>!\n"
+            f"{pe('celebrate', '🎉')} <b>Бот задеплоен!</b>\n\n"
+            f"<b>{display_name}</b> → {chosen_worker['label']}\n"
             f"Точка входа: <code>{entry_point}</code>",
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup([
@@ -261,14 +266,13 @@ async def _finalize_bot(
         )
         return ConversationHandler.END
 
-    # ── Всі воркери заповнені або недоступні ─────────────────────────────────
     await status_msg.edit_text(
-        "❌ <b>Немає доступних воркерів</b>\n\n"
-        "Всі сервери заповнені або недоступні.\n"
-        "Зверніться до адміністратора.",
+        f"{pe('cross', '❌')} <b>Нет доступных воркеров</b>\n\n"
+        "Все серверы заняты или недоступны.\n"
+        "Обратитесь к администратору.",
         parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔙 Назад", callback_data="menu")]
+            [InlineKeyboardButton("🏠 Главное меню", callback_data="menu")]
         ]),
     )
     return ConversationHandler.END
@@ -276,7 +280,10 @@ async def _finalize_bot(
 
 # ─── Не-ZIP документ ──────────────────────────────────────────────────────────
 async def non_zip_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("❌ Пожалуйста, отправьте файл в формате <b>.zip</b>.", parse_mode="HTML")
+    await update.message.reply_text(
+        "❌ Пожалуйста, отправьте файл в формате <b>.zip</b>.",
+        parse_mode="HTML",
+    )
     return WAITING_ZIP
 
 

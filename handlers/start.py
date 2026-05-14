@@ -1,7 +1,7 @@
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from keyboards import main_menu_keyboard
+from keyboards import main_menu_keyboard, pe
 
 _SEP = "━━━━━━━━━━━━━━━"
 
@@ -14,14 +14,15 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             user_registry.register(user.id, user.username or "")
 
     text = (
-        f"🚀 <b>Bot Hosting</b>\n"
+        f"{pe('bot', '🤖')} <b>Bot Hosting</b>\n"
         f"{_SEP}\n"
-        f"Запускайте Python-ботов 24/7\n"
-        f"без сервера и технических знаний.\n"
+        f"Запускайте Python-ботов <b>24/7</b> без сервера\n"
+        f"и технических знаний.\n"
         f"{_SEP}\n"
-        f"▸ Купите хостинг — получите слот\n"
-        f"▸ Загрузите ZIP или Git репозиторий\n"
-        f"▸ Бот работает круглосуточно"
+        f"{pe('upload', '⬆️')} Загрузите ZIP или Git репозиторий\n"
+        f"{pe('lock', '🔒')} Изолированное окружение для каждого бота\n"
+        f"{pe('money', '💰')} Оплата криптовалютой\n"
+        f"{pe('loading', '🔄')} Автоматический перезапуск при сбоях"
     )
 
     if update.callback_query:

@@ -1,7 +1,7 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
-from keyboards import bot_list_keyboard, bot_detail_keyboard, STATUS_ICON
+from keyboards import bot_list_keyboard, bot_detail_keyboard, STATUS_ICON, pe
 
 
 def _is_admin(user_id: int, context) -> bool:
@@ -22,16 +22,18 @@ async def my_bots_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not bots:
         await query.edit_message_text(
-            "У вас ещё нет ботов.\n\nНажмите <b>➕ Добавить бота</b> в главном меню.",
+            f"{pe('bot', '🤖')} <b>Ботов пока нет</b>\n\n"
+            f"Нажмите <b>⬆️ Добавить бота</b> в главном меню,\n"
+            f"чтобы запустить своего первого бота.",
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("🔙 Назад", callback_data="menu")]
+                [InlineKeyboardButton("🏠 Главное меню", callback_data="menu")]
             ]),
         )
         return
 
     await query.edit_message_text(
-        "🤖 <b>Ваши боты:</b>",
+        f"{pe('bot', '🤖')} <b>Мои боты</b>",
         parse_mode="HTML",
         reply_markup=bot_list_keyboard(bots, manager),
     )
@@ -58,13 +60,20 @@ async def bot_info_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         is_running = bot.get("status") == "running"
     else:
         is_running = manager.is_running(bot_name)
-    status = "🟢 Запущен" if is_running else "🔴 Остановлен"
-    source = "🔗 Git" if bot.get("source") == "git" else "📦 ZIP"
+
+    status_icon = "🟢" if is_running else "🔴"
+    status_text = "Запущен" if is_running else "Остановлен"
+    source_text = f"{pe('lock', '🔗')} Git" if bot.get("source") == "git" else f"{pe('package', '📦')} ZIP"
+    worker_line = ""
+    if bot.get("worker_id"):
+        worker_line = f"\n{pe('stats', '🖥')} Воркер: <code>{bot['worker_id']}</code>"
+
     text = (
-        f"🤖 <b>{bot.get('display_name', bot_name)}</b>\n\n"
-        f"Статус: {status}\n"
-        f"Источник: {source}\n"
-        f"Точка входа: <code>{bot['entry_point']}</code>\n"
+        f"{pe('bot', '🤖')} <b>{bot.get('display_name', bot_name)}</b>\n\n"
+        f"Статус: {status_icon} <b>{status_text}</b>\n"
+        f"Источник: {source_text}\n"
+        f"Точка входа: <code>{bot['entry_point']}</code>"
+        f"{worker_line}\n"
         f"Добавлен: {bot.get('added_at', '—')}"
     )
     await query.edit_message_text(

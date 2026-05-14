@@ -7,7 +7,7 @@ from telegram.ext import ContextTypes, ConversationHandler
 from keyboards import (
     bot_detail_keyboard, delete_confirm_keyboard, logs_keyboard,
     packages_keyboard, config_keyboard, config_edit_keyboard,
-    update_source_keyboard,
+    update_source_keyboard, pe,
 )
 import worker_client as wc
 
@@ -43,6 +43,15 @@ def _esc(text: str) -> str:
     return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
+def _bot_status_text(bot: dict, bot_name: str, is_running: bool) -> str:
+    status_icon = "🟢" if is_running else "🔴"
+    status_text = "Запущен" if is_running else "Остановлен"
+    return (
+        f"{pe('bot', '🤖')} <b>{bot.get('display_name', bot_name)}</b>\n\n"
+        f"Статус: {status_icon} <b>{status_text}</b>"
+    )
+
+
 # ─── Запуск ───────────────────────────────────────────────────────────────────
 async def start_bot_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -66,10 +75,10 @@ async def start_bot_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             manager.schedule_watch(bot_name)
     bot = registry.get_bot(bot_name)
     is_running = _is_running(bot, manager)
+    result_icon = pe('check', '✅') if ok else pe('cross', '❌')
     await query.edit_message_text(
-        f"🤖 <b>{bot.get('display_name', bot_name)}</b>\n\n"
-        f"Статус: {'🟢 Запущен' if is_running else '🔴 Остановлен'}\n\n"
-        f"{'✅' if ok else '❌'} {msg}",
+        f"{_bot_status_text(bot, bot_name, is_running)}\n\n"
+        f"{result_icon} {_esc(msg)}",
         parse_mode="HTML",
         reply_markup=bot_detail_keyboard(bot_name, is_running),
     )
@@ -96,10 +105,10 @@ async def stop_bot_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ok, msg = manager.stop_bot(bot_name)
     bot = registry.get_bot(bot_name)
     is_running = _is_running(bot, manager)
+    result_icon = pe('check', '✅') if ok else pe('cross', '❌')
     await query.edit_message_text(
-        f"🤖 <b>{bot.get('display_name', bot_name)}</b>\n\n"
-        f"Статус: {'🟢 Запущен' if is_running else '🔴 Остановлен'}\n\n"
-        f"{'✅' if ok else '❌'} {msg}",
+        f"{_bot_status_text(bot, bot_name, is_running)}\n\n"
+        f"{result_icon} {_esc(msg)}",
         parse_mode="HTML",
         reply_markup=bot_detail_keyboard(bot_name, is_running),
     )
@@ -117,7 +126,9 @@ async def delete_bot_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await query.answer("⛔ Нет доступа.", show_alert=True)
         return
     await query.edit_message_text(
-        f"🗑 Удалить бота <b>{bot.get('display_name', bot_name)}</b>?\n\nВсе файлы будут удалены безвозвратно.",
+        f"{pe('trash', '🗑')} <b>Удалить бота?</b>\n\n"
+        f"<b>{bot.get('display_name', bot_name)}</b>\n\n"
+        f"Все файлы будут удалены безвозвратно.",
         parse_mode="HTML",
         reply_markup=delete_confirm_keyboard(bot_name),
     )
@@ -144,19 +155,20 @@ async def confirm_delete_handler(update: Update, context: ContextTypes.DEFAULT_T
         ok, msg = manager.delete_bot(bot_name)
     user_registry.remove_bot_from_user(owner_id, bot_name)
     bots = registry.list_bots_by_owner(user_id) if not _is_admin(user_id, context) else registry.list_bots()
+    result_icon = pe('check', '✅') if ok else pe('cross', '❌')
     if bots:
         from keyboards import bot_list_keyboard
         await query.edit_message_text(
-            f"{'✅' if ok else '❌'} {msg}\n\n🤖 <b>Ваши боты:</b>",
+            f"{result_icon} {msg}\n\n{pe('bot', '🤖')} <b>Мои боты</b>",
             parse_mode="HTML",
             reply_markup=bot_list_keyboard(bots, manager),
         )
     else:
         await query.edit_message_text(
-            f"{'✅' if ok else '❌'} {msg}\n\nУ вас нет ботов.",
+            f"{result_icon} {msg}\n\nУ вас нет ботов.",
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("🔙 Назад", callback_data="menu")]
+                [InlineKeyboardButton("🏠 Главное меню", callback_data="menu")]
             ]),
         )
 
@@ -180,7 +192,8 @@ async def logs_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logs = manager.get_logs(bot_name, n=30)
     logs_trimmed = logs[-3800:] if len(logs) > 3800 else logs
     await query.edit_message_text(
-        f"📋 <b>Логи: {bot.get('display_name', bot_name)}</b>\n\n<code>{_esc(logs_trimmed)}</code>",
+        f"{pe('eye', '👁')} <b>Логи: {bot.get('display_name', bot_name)}</b>\n\n"
+        f"<code>{_esc(logs_trimmed)}</code>",
         parse_mode="HTML",
         reply_markup=logs_keyboard(bot_name),
     )
@@ -208,7 +221,7 @@ async def config_view_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
                 content = f.read().strip()
     display = f"<code>{_esc(content)}</code>" if content else "<i>(пусто)</i>"
     await query.edit_message_text(
-        f"📝 <b>Конфиг: {bot.get('display_name', bot_name)}</b>\n\n{display}",
+        f"{pe('pencil', '⚙️')} <b>Конфиг: {bot.get('display_name', bot_name)}</b>\n\n{display}",
         parse_mode="HTML",
         reply_markup=config_keyboard(bot_name),
     )
@@ -227,8 +240,10 @@ async def config_edit_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ConversationHandler_END()
     context.user_data["config_for"] = bot_name
     await query.edit_message_text(
-        f"✏️ <b>Редактирование конфига: {bot.get('display_name', bot_name)}</b>\n\n"
-        "Отправьте конфиг в формате <code>КЛЮЧ=ЗНАЧЕНИЕ</code>, каждая переменная с новой строки:\n\n"
+        f"{pe('pencil', '✏️')} <b>Редактирование конфига</b>\n"
+        f"<b>{bot.get('display_name', bot_name)}</b>\n\n"
+        "Отправьте переменные в формате <code>КЛЮЧ=ЗНАЧЕНИЕ</code>,\n"
+        "каждая переменная с новой строки:\n\n"
         "<code>BOT_TOKEN=1234567890:ABC...\nADMIN_ID=123456</code>",
         parse_mode="HTML",
         reply_markup=config_edit_keyboard(bot_name),
@@ -261,8 +276,9 @@ async def config_save_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         with open(os.path.join(bot["path"], ".env"), "w", encoding="utf-8") as f:
             f.write(new_content + "\n")
     await update.message.reply_text(
-        f"✅ Конфиг сохранён для <b>{bot.get('display_name', bot_name)}</b>.\n"
-        "Перезапустите бота, чтобы изменения вступили в силу.",
+        f"{pe('check', '✅')} <b>Конфиг сохранён!</b>\n\n"
+        f"<b>{bot.get('display_name', bot_name)}</b>\n\n"
+        f"Перезапустите бота, чтобы изменения вступили в силу.",
         parse_mode="HTML",
         reply_markup=config_keyboard(bot_name),
     )
@@ -283,7 +299,7 @@ async def cancel_config(update: Update, context: ContextTypes.DEFAULT_TYPE):
             content = f.read().strip()
     display = f"<code>{_esc(content)}</code>" if content else "<i>(пусто)</i>"
     await query.edit_message_text(
-        f"📝 <b>Конфиг: {bot.get('display_name', bot_name) if bot else bot_name}</b>\n\n{display}",
+        f"{pe('pencil', '⚙️')} <b>Конфиг: {bot.get('display_name', bot_name) if bot else bot_name}</b>\n\n{display}",
         parse_mode="HTML",
         reply_markup=config_keyboard(bot_name),
     )
@@ -303,7 +319,8 @@ async def packages_entry_handler(update: Update, context: ContextTypes.DEFAULT_T
         return
     context.user_data["installing_for"] = bot_name
     await query.edit_message_text(
-        f"⚙️ <b>Пакеты для {bot.get('display_name', bot_name)}</b>\n\n"
+        f"{pe('package', '📦')} <b>Установка пакетов</b>\n"
+        f"<b>{bot.get('display_name', bot_name)}</b>\n\n"
         "Напишите названия пакетов через пробел:\n"
         "<code>pyTelegramBotAPI requests aiohttp</code>",
         parse_mode="HTML",
@@ -329,15 +346,17 @@ async def packages_install_handler(update: Update, context: ContextTypes.DEFAULT
         await update.message.reply_text("❌ Введите хотя бы один пакет.")
         return WAITING_PACKAGES
     status_msg = await update.message.reply_text(
-        f"⏳ Устанавливаю: <code>{' '.join(packages)}</code>...", parse_mode="HTML"
+        f"{pe('loading', '⏳')} Устанавливаю: <code>{' '.join(packages)}</code>...",
+        parse_mode="HTML",
     )
     worker = _get_worker(bot, context)
     if worker:
         ok, msg = await wc.install(worker, bot_name, packages)
     else:
         ok, msg = await manager.install_packages(bot["path"], packages)
+    result_icon = pe('check', '✅') if ok else pe('cross', '❌')
     await status_msg.edit_text(
-        f"{'✅' if ok else '❌'} {_esc(msg)}",
+        f"{result_icon} {_esc(msg)}",
         parse_mode="HTML",
         reply_markup=packages_keyboard(bot_name),
     )
@@ -357,8 +376,7 @@ async def cancel_packages(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ConversationHandler.END
     is_running = _is_running(bot, manager)
     await query.edit_message_text(
-        f"🤖 <b>{bot.get('display_name', bot_name)}</b>\n\n"
-        f"Статус: {'🟢 Запущен' if is_running else '🔴 Остановлен'}",
+        _bot_status_text(bot, bot_name, is_running),
         parse_mode="HTML",
         reply_markup=bot_detail_keyboard(bot_name, is_running),
     )
@@ -378,7 +396,7 @@ async def restart_bot_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         await query.answer("⛔ Нет доступа.", show_alert=True)
         return
     await query.edit_message_text(
-        f"🔄 Перезапускаю <b>{bot.get('display_name', bot_name)}</b>...",
+        f"{pe('loading', '🔄')} Перезапускаю <b>{bot.get('display_name', bot_name)}</b>...",
         parse_mode="HTML",
     )
     worker = _get_worker(bot, context)
@@ -394,10 +412,9 @@ async def restart_bot_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
             manager.schedule_watch(bot_name)
     bot = registry.get_bot(bot_name)
     is_running = _is_running(bot, manager)
+    result_line = f"\n\n{pe('check', '✅')} Перезапущен" if ok else f"\n\n{pe('cross', '❌')} {_esc(msg)}"
     await query.edit_message_text(
-        f"🤖 <b>{bot.get('display_name', bot_name)}</b>\n\n"
-        f"Статус: {'🟢 Запущен' if is_running else '🔴 Остановлен'}\n\n"
-        f"{'✅ Перезапущен' if ok else '❌ ' + _esc(msg)}",
+        f"{_bot_status_text(bot, bot_name, is_running)}{result_line}",
         parse_mode="HTML",
         reply_markup=bot_detail_keyboard(bot_name, is_running),
     )
@@ -415,8 +432,9 @@ async def update_bot_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return
     has_git = bool(bot.get("git_url"))
     await query.edit_message_text(
-        f"🔄 <b>Оновити код: {bot.get('display_name', bot_name)}</b>\n\n"
-        "Оберіть спосіб оновлення:",
+        f"{pe('upload', '⬆️')} <b>Обновить код</b>\n"
+        f"<b>{bot.get('display_name', bot_name)}</b>\n\n"
+        "Выберите способ обновления:",
         parse_mode="HTML",
         reply_markup=update_source_keyboard(bot_name, has_git),
     )
@@ -434,30 +452,34 @@ async def update_git_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return
     git_url = bot.get("git_url", "")
     if not git_url:
-        await query.answer("❌ Git URL не знайдено.", show_alert=True)
+        await query.answer("❌ Git URL не найден.", show_alert=True)
         return
     worker = _get_worker(bot, context)
     if not worker:
-        await query.edit_message_text("❌ Воркер недоступний.", parse_mode="HTML",
-                                      reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data=f"bot_info:{bot_name}")]]))
+        await query.edit_message_text(
+            "❌ Воркер недоступен.",
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Назад", callback_data=f"bot_info:{bot_name}")]]),
+        )
         return
     await query.edit_message_text(
-        f"⏳ Оновлюю код <b>{bot.get('display_name', bot_name)}</b> з Git...",
+        f"{pe('loading', '🔄')} Обновляю код <b>{bot.get('display_name', bot_name)}</b> из Git...",
         parse_mode="HTML",
     )
     await wc.stop(worker, bot_name)
     ok, result = await wc.deploy_git(worker, bot_name, git_url, bot.get("display_name", bot_name), bot.get("owner_id", 0))
     if not ok:
         await query.edit_message_text(
-            f"❌ Помилка оновлення:\n<code>{html.escape(result)}</code>",
+            f"{pe('cross', '❌')} <b>Ошибка обновления:</b>\n<code>{html.escape(result)}</code>",
             parse_mode="HTML",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data=f"bot_info:{bot_name}")]]),
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Назад", callback_data=f"bot_info:{bot_name}")]]),
         )
         return
     bot = registry.get_bot(bot_name)
     is_running = _is_running(bot, manager)
     await query.edit_message_text(
-        f"✅ <b>{bot.get('display_name', bot_name)}</b> оновлено!\n\nЗапустіть бота щоб застосувати зміни.",
+        f"{pe('check', '✅')} <b>{bot.get('display_name', bot_name)}</b> обновлён!\n\n"
+        f"Запустите бота, чтобы применить изменения.",
         parse_mode="HTML",
         reply_markup=bot_detail_keyboard(bot_name, is_running),
     )
@@ -474,10 +496,10 @@ async def update_zip_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ConversationHandler.END
     context.user_data["update_for"] = bot_name
     await query.edit_message_text(
-        f"📦 <b>Оновити {bot.get('display_name', bot_name)}</b>\n\n"
-        "Відправте новий <b>ZIP-архів</b> з кодом бота:",
+        f"{pe('package', '📦')} <b>Обновить {bot.get('display_name', bot_name)}</b>\n\n"
+        "Отправьте новый <b>ZIP-архив</b> с кодом бота:",
         parse_mode="HTML",
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Скасувати", callback_data=f"bot_info:{bot_name}")]]),
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("✖️ Отмена", callback_data=f"bot_info:{bot_name}")]]),
     )
     return WAITING_UPDATE_ZIP
 
@@ -490,32 +512,36 @@ async def receive_update_zip(update: Update, context: ContextTypes.DEFAULT_TYPE)
     manager = context.bot_data["manager"]
     bot = registry.get_bot(bot_name)
     if not bot:
-        await update.message.reply_text("❌ Бот не знайдений.")
+        await update.message.reply_text("❌ Бот не найден.")
         return ConversationHandler.END
     doc = update.message.document
     if not doc or not doc.file_name.endswith(".zip"):
-        await update.message.reply_text("❌ Відправте файл у форматі .zip")
+        await update.message.reply_text("❌ Отправьте файл в формате .zip")
         return WAITING_UPDATE_ZIP
     worker = _get_worker(bot, context)
     if not worker:
-        await update.message.reply_text("❌ Воркер недоступний.")
+        await update.message.reply_text("❌ Воркер недоступен.")
         return ConversationHandler.END
-    status_msg = await update.message.reply_text("⏳ Завантажую та оновлюю код...")
+    status_msg = await update.message.reply_text(
+        f"{pe('loading', '⏳')} Загружаю и обновляю код...",
+        parse_mode="HTML",
+    )
     tg_file = await doc.get_file()
     zip_bytes = bytes(await tg_file.download_as_bytearray())
     await wc.stop(worker, bot_name)
     ok, result = await wc.deploy_zip(worker, bot_name, zip_bytes, bot.get("display_name", bot_name), bot.get("owner_id", 0))
     if not ok:
         await status_msg.edit_text(
-            f"❌ Помилка оновлення:\n<code>{html.escape(result)}</code>",
+            f"{pe('cross', '❌')} <b>Ошибка обновления:</b>\n<code>{html.escape(result)}</code>",
             parse_mode="HTML",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data=f"bot_info:{bot_name}")]]),
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Назад", callback_data=f"bot_info:{bot_name}")]]),
         )
         return ConversationHandler.END
     bot = registry.get_bot(bot_name)
     is_running = _is_running(bot, manager)
     await status_msg.edit_text(
-        f"✅ <b>{bot.get('display_name', bot_name)}</b> оновлено!\n\nЗапустіть бота щоб застосувати зміни.",
+        f"{pe('check', '✅')} <b>{bot.get('display_name', bot_name)}</b> обновлён!\n\n"
+        f"Запустите бота, чтобы применить изменения.",
         parse_mode="HTML",
         reply_markup=bot_detail_keyboard(bot_name, is_running),
     )

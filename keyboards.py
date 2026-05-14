@@ -3,8 +3,41 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from payments import PLANS, CURRENCIES
 
-# ─── Иконки ───────────────────────────────────────────────────────────────────
+# ─── Status icons ─────────────────────────────────────────────────────────────
 STATUS_ICON = {"running": "🟢", "stopped": "🔴"}
+
+# ─── Premium emoji IDs ────────────────────────────────────────────────────────
+_E = {
+    "settings":  "5870982283724328568",
+    "profile":   "5870994129244131212",
+    "users":     "5870772616305839506",
+    "check":     "5870633910337015697",
+    "cross":     "5870657884844462243",
+    "bot":       "6030400221232501136",
+    "home":      "5873147866364514353",
+    "stats":     "5870921681735781843",
+    "lock":      "6037249452824072506",
+    "megaphone": "6039422865189638057",
+    "pencil":    "5870676941614354370",
+    "trash":     "5870875489362513438",
+    "file":      "5870528606328852614",
+    "info":      "6028435952299413210",
+    "download":  "6039802767931871481",
+    "wallet":    "5769126056262898415",
+    "gift":      "6032644646587338669",
+    "money":     "5904462880941545555",
+    "loading":   "5345906554510012647",
+    "celebrate": "6041731551845159060",
+    "notify":    "6039486778597970865",
+    "package":   "5884479287171485878",
+    "eye":       "6037397706505195857",
+    "upload":    "5963103826075456248",
+}
+
+
+def pe(key: str, fallback: str = "•") -> str:
+    """Premium emoji HTML tag for use in HTML-formatted messages."""
+    return f'<tg-emoji emoji-id="{_E[key]}">{fallback}</tg-emoji>'
 
 
 # ─── Утилиты ──────────────────────────────────────────────────────────────────
@@ -23,9 +56,9 @@ def main_menu_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton("🤖 Мои боты", callback_data="my_bots"),
-            InlineKeyboardButton("➕ Добавить бота", callback_data="add_bot"),
+            InlineKeyboardButton("⬆️ Добавить бота", callback_data="add_bot"),
         ],
-        [InlineKeyboardButton("🖥 Мой хостинг", callback_data="balance")],
+        [InlineKeyboardButton("💼 Мой хостинг", callback_data="balance")],
     ])
 
 
@@ -41,7 +74,7 @@ def bot_list_keyboard(bots: list[dict], manager) -> InlineKeyboardMarkup:
             is_running = manager.is_running(name)
         icon = STATUS_ICON["running"] if is_running else STATUS_ICON["stopped"]
         rows.append([InlineKeyboardButton(f"{icon} {display}", callback_data=f"bot_info:{name}")])
-    rows.append([InlineKeyboardButton("🔙 Назад", callback_data="menu")])
+    rows.append([InlineKeyboardButton("🏠 Главное меню", callback_data="menu")])
     return InlineKeyboardMarkup(rows)
 
 
@@ -53,27 +86,27 @@ def bot_detail_keyboard(bot_name: str, is_running: bool) -> InlineKeyboardMarkup
         InlineKeyboardButton("▶️ Запустить", callback_data=f"start_bot:{bot_name}")
     )
     return InlineKeyboardMarkup([
-        [action, InlineKeyboardButton("🔄 Перезапустить", callback_data=f"restart_bot:{bot_name}")],
+        [action, InlineKeyboardButton("🔄 Перезапуск", callback_data=f"restart_bot:{bot_name}")],
         [
-            InlineKeyboardButton("📋 Логи", callback_data=f"logs:{bot_name}"),
-            InlineKeyboardButton("📝 Конфиг", callback_data=f"config:{bot_name}"),
+            InlineKeyboardButton("👁 Логи", callback_data=f"logs:{bot_name}"),
+            InlineKeyboardButton("⚙️ Конфиг", callback_data=f"config:{bot_name}"),
         ],
         [
-            InlineKeyboardButton("⚙️ Пакеты", callback_data=f"packages:{bot_name}"),
+            InlineKeyboardButton("📦 Пакеты", callback_data=f"packages:{bot_name}"),
             InlineKeyboardButton("📁 Файлы", callback_data=f"files:{bot_name}"),
         ],
-        [InlineKeyboardButton("🔄 Обновить код", callback_data=f"update_bot:{bot_name}")],
-        [InlineKeyboardButton("🗑 Удалить", callback_data=f"delete:{bot_name}")],
-        [InlineKeyboardButton("🔙 Назад", callback_data="my_bots")],
+        [InlineKeyboardButton("⬆️ Обновить код", callback_data=f"update_bot:{bot_name}")],
+        [InlineKeyboardButton("🗑 Удалить бота", callback_data=f"delete:{bot_name}")],
+        [InlineKeyboardButton("◀️ К списку ботов", callback_data="my_bots")],
     ])
 
 
 def update_source_keyboard(bot_name: str, has_git: bool) -> InlineKeyboardMarkup:
     rows = []
     if has_git:
-        rows.append([InlineKeyboardButton("🔗 Оновити з Git", callback_data=f"update_git:{bot_name}")])
-    rows.append([InlineKeyboardButton("📦 Завантажити новий ZIP", callback_data=f"update_zip:{bot_name}")])
-    rows.append([InlineKeyboardButton("❌ Скасувати", callback_data=f"bot_info:{bot_name}")])
+        rows.append([InlineKeyboardButton("🔗 Обновить из Git", callback_data=f"update_git:{bot_name}")])
+    rows.append([InlineKeyboardButton("📦 Загрузить новый ZIP", callback_data=f"update_zip:{bot_name}")])
+    rows.append([InlineKeyboardButton("✖️ Отмена", callback_data=f"bot_info:{bot_name}")])
     return InlineKeyboardMarkup(rows)
 
 
@@ -81,8 +114,8 @@ def update_source_keyboard(bot_name: str, has_git: bool) -> InlineKeyboardMarkup
 def delete_confirm_keyboard(bot_name: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("✅ Да, удалить", callback_data=f"confirm_del:{bot_name}"),
-            InlineKeyboardButton("❌ Отмена", callback_data=f"bot_info:{bot_name}"),
+            InlineKeyboardButton("🗑 Да, удалить", callback_data=f"confirm_del:{bot_name}"),
+            InlineKeyboardButton("✖️ Отмена", callback_data=f"bot_info:{bot_name}"),
         ]
     ])
 
@@ -91,8 +124,8 @@ def delete_confirm_keyboard(bot_name: str) -> InlineKeyboardMarkup:
 def logs_keyboard(bot_name: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("🔄 Обновить", callback_data=f"logs:{bot_name}"),
-            InlineKeyboardButton("🔙 Назад", callback_data=f"bot_info:{bot_name}"),
+            InlineKeyboardButton("🔄 Обновить логи", callback_data=f"logs:{bot_name}"),
+            InlineKeyboardButton("◀️ Назад", callback_data=f"bot_info:{bot_name}"),
         ]
     ])
 
@@ -101,20 +134,20 @@ def logs_keyboard(bot_name: str) -> InlineKeyboardMarkup:
 def config_keyboard(bot_name: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("✏️ Редактировать", callback_data=f"edit_config:{bot_name}")],
-        [InlineKeyboardButton("🔙 Назад", callback_data=f"bot_info:{bot_name}")],
+        [InlineKeyboardButton("◀️ Назад", callback_data=f"bot_info:{bot_name}")],
     ])
 
 
 def config_edit_keyboard(bot_name: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("❌ Отмена", callback_data=f"config:{bot_name}")]
+        [InlineKeyboardButton("✖️ Отмена", callback_data=f"config:{bot_name}")]
     ])
 
 
 # ─── Пакеты ───────────────────────────────────────────────────────────────────
 def packages_keyboard(bot_name: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🔙 Назад", callback_data=f"bot_info:{bot_name}")]
+        [InlineKeyboardButton("◀️ Назад", callback_data=f"bot_info:{bot_name}")]
     ])
 
 
@@ -125,7 +158,7 @@ def files_keyboard(bot_name: str, files: list[str]) -> InlineKeyboardMarkup:
         rows.append([InlineKeyboardButton(
             f"📄 {fname}", callback_data=f"dl_file:{bot_name}:{i}"
         )])
-    rows.append([InlineKeyboardButton("🔙 Назад", callback_data=f"bot_info:{bot_name}")])
+    rows.append([InlineKeyboardButton("◀️ Назад", callback_data=f"bot_info:{bot_name}")])
     return InlineKeyboardMarkup(rows)
 
 
@@ -136,15 +169,15 @@ def add_source_keyboard() -> InlineKeyboardMarkup:
             InlineKeyboardButton("📦 ZIP-архив", callback_data="add_zip"),
             InlineKeyboardButton("🔗 Git репозиторий", callback_data="add_git"),
         ],
-        [InlineKeyboardButton("🔙 Назад", callback_data="menu")],
+        [InlineKeyboardButton("🏠 Главное меню", callback_data="menu")],
     ])
 
 
 # ─── Хостинг ──────────────────────────────────────────────────────────────────
 def balance_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🖥 Купить хостинг-слот", callback_data="plans")],
-        [InlineKeyboardButton("🔙 Назад", callback_data="menu")],
+        [InlineKeyboardButton("🛒 Купить хостинг-слот", callback_data="plans")],
+        [InlineKeyboardButton("🏠 Главное меню", callback_data="menu")],
     ])
 
 
@@ -153,7 +186,7 @@ def plans_keyboard() -> InlineKeyboardMarkup:
     for key, plan in PLANS.items():
         label = f"💾 {plan['ram']} RAM — {plan['price']} USDT/мес"
         rows.append([InlineKeyboardButton(label, callback_data=f"buy_plan:{key}")])
-    rows.append([InlineKeyboardButton("🔙 Назад", callback_data="balance")])
+    rows.append([InlineKeyboardButton("◀️ Назад", callback_data="balance")])
     return InlineKeyboardMarkup(rows)
 
 
@@ -161,14 +194,14 @@ def currency_keyboard(plan_key: str) -> InlineKeyboardMarkup:
     rows = [[InlineKeyboardButton(c, callback_data=f"pay_currency:{plan_key}:{c}")]
             for c in CURRENCIES]
     rows.append([InlineKeyboardButton("💎 Оплатить TON", callback_data=f"pay_ton:{plan_key}")])
-    rows.append([InlineKeyboardButton("🔙 Назад", callback_data="plans")])
+    rows.append([InlineKeyboardButton("◀️ Назад", callback_data="plans")])
     return InlineKeyboardMarkup(rows)
 
 
 def payment_keyboard(pay_url: str, plan_key: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("💳 Оплатить", url=pay_url)],
-        [InlineKeyboardButton("🔙 Назад", callback_data="plans")],
+        [InlineKeyboardButton("💳 Оплатить сейчас", url=pay_url)],
+        [InlineKeyboardButton("◀️ Назад", callback_data="plans")],
     ])
 
 
@@ -179,7 +212,7 @@ def ton_payment_keyboard(plan_key: str, wallet: str = "", amount_ton: float = 0,
         tonkeeper_url = f"https://app.tonkeeper.com/transfer/{wallet}?amount={amount_nano}&text={comment}"
         rows.append([InlineKeyboardButton("💎 Открыть TonKeeper", url=tonkeeper_url)])
     rows.append([InlineKeyboardButton("✅ Я оплатил", callback_data=f"ton_check:{plan_key}")])
-    rows.append([InlineKeyboardButton("🔙 Назад", callback_data=f"buy_plan:{plan_key}")])
+    rows.append([InlineKeyboardButton("◀️ Назад", callback_data=f"buy_plan:{plan_key}")])
     return InlineKeyboardMarkup(rows)
 
 
@@ -198,7 +231,7 @@ def admin_menu_keyboard() -> InlineKeyboardMarkup:
             InlineKeyboardButton("📥 Скачать БД", callback_data="admin_download_db"),
             InlineKeyboardButton("📤 Загрузить БД", callback_data="admin_upload_db"),
         ],
-        [InlineKeyboardButton("🔙 Назад", callback_data="menu")],
+        [InlineKeyboardButton("🏠 Главное меню", callback_data="menu")],
     ])
 
 
@@ -211,7 +244,7 @@ def workers_keyboard(workers: list[dict], statuses: dict) -> InlineKeyboardMarku
             callback_data=f"admin_worker:{w['id']}",
         )])
     rows.append([InlineKeyboardButton("➕ Добавить воркер", callback_data="admin_add_worker")])
-    rows.append([InlineKeyboardButton("🔙 Назад", callback_data="admin_menu")])
+    rows.append([InlineKeyboardButton("◀️ Назад", callback_data="admin_menu")])
     return InlineKeyboardMarkup(rows)
 
 
@@ -219,9 +252,9 @@ def worker_detail_keyboard(worker_id: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton("📊 Ресурсы", callback_data=f"admin_worker_res:{worker_id}"),
-            InlineKeyboardButton("❌ Удалить", callback_data=f"admin_worker_del:{worker_id}"),
+            InlineKeyboardButton("🗑 Удалить", callback_data=f"admin_worker_del:{worker_id}"),
         ],
-        [InlineKeyboardButton("🔙 Назад", callback_data="admin_workers")],
+        [InlineKeyboardButton("◀️ Назад", callback_data="admin_workers")],
     ])
 
 
@@ -236,7 +269,7 @@ def admin_users_keyboard(users: list[dict]) -> InlineKeyboardMarkup:
             f"👤 @{uname} | {plan} | {bots_count} бот(ов)",
             callback_data=f"admin_user:{uid}",
         )])
-    rows.append([InlineKeyboardButton("🔙 Назад", callback_data="admin_menu")])
+    rows.append([InlineKeyboardButton("◀️ Назад", callback_data="admin_menu")])
     return InlineKeyboardMarkup(rows)
 
 
@@ -255,12 +288,12 @@ def admin_bots_keyboard(bots: list[dict], manager) -> InlineKeyboardMarkup:
             f"{icon} {display} (uid:{owner})",
             callback_data=f"bot_info:{name}",
         )])
-    rows.append([InlineKeyboardButton("🔙 Назад", callback_data="admin_menu")])
+    rows.append([InlineKeyboardButton("◀️ Назад", callback_data="admin_menu")])
     return InlineKeyboardMarkup(rows)
 
 
 def admin_resources_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🔄 Обновить", callback_data="admin_resources")],
-        [InlineKeyboardButton("🔙 Назад", callback_data="admin_menu")],
+        [InlineKeyboardButton("◀️ Назад", callback_data="admin_menu")],
     ])

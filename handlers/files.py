@@ -4,7 +4,7 @@ import os
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
-from keyboards import files_keyboard
+from keyboards import files_keyboard, pe
 import worker_client as wc
 
 
@@ -54,16 +54,16 @@ async def files_list_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     if not files:
         await query.edit_message_text(
-            f"📁 <b>Файлы: {bot.get('display_name', bot_name)}</b>\n\n<i>(папка пуста)</i>",
+            f"{pe('file', '📁')} <b>Файлы: {bot.get('display_name', bot_name)}</b>\n\n<i>(папка пуста)</i>",
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("🔙 Назад", callback_data=f"bot_info:{bot_name}")]
+                [InlineKeyboardButton("◀️ Назад", callback_data=f"bot_info:{bot_name}")]
             ]),
         )
         return
 
     await query.edit_message_text(
-        f"📁 <b>Файлы: {bot.get('display_name', bot_name)}</b>\n\nНажмите на файл, чтобы скачать:",
+        f"{pe('file', '📁')} <b>Файлы: {bot.get('display_name', bot_name)}</b>\n\nНажмите на файл для скачивания:",
         parse_mode="HTML",
         reply_markup=files_keyboard(bot_name, files),
     )

@@ -8,7 +8,7 @@ from telegram.ext import ContextTypes, ConversationHandler
 from keyboards import (
     admin_menu_keyboard, admin_users_keyboard,
     admin_bots_keyboard, admin_resources_keyboard,
-    workers_keyboard, worker_detail_keyboard,
+    workers_keyboard, worker_detail_keyboard, pe,
 )
 import worker_client as wc
 
@@ -27,7 +27,7 @@ async def admin_command_handler(update: Update, context: ContextTypes.DEFAULT_TY
         if update.message:
             await update.message.reply_text("⛔ Нет доступа.")
         return
-    text = "🛠 <b>Панель администратора</b>"
+    text = f"{pe('settings', '🛠')} <b>Панель администратора</b>"
     if update.callback_query:
         await update.callback_query.answer()
         await update.callback_query.edit_message_text(
@@ -49,14 +49,15 @@ async def admin_users_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     users = user_registry.list_users()
     if not users:
         await query.edit_message_text(
-            "👥 Пользователей нет.",
+            f"{pe('users', '👥')} Пользователей пока нет.",
+            parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("🔙 Назад", callback_data="admin_menu")]
+                [InlineKeyboardButton("◀️ Назад", callback_data="admin_menu")]
             ]),
         )
         return
     await query.edit_message_text(
-        f"👥 <b>Пользователи ({len(users)}):</b>",
+        f"{pe('users', '👥')} <b>Пользователи ({len(users)}):</b>",
         parse_mode="HTML",
         reply_markup=admin_users_keyboard(users),
     )
@@ -73,15 +74,16 @@ async def admin_bots_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
     bots = registry.list_bots()
     if not bots:
         await query.edit_message_text(
-            "🤖 Ботов нет.",
+            f"{pe('bot', '🤖')} Ботов пока нет.",
+            parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("🔙 Назад", callback_data="admin_menu")]
+                [InlineKeyboardButton("◀️ Назад", callback_data="admin_menu")]
             ]),
         )
         return
     running = sum(1 for b in bots if manager.is_running(b["name"]))
     await query.edit_message_text(
-        f"🤖 <b>Все боты ({len(bots)}, запущено: {running}):</b>",
+        f"{pe('bot', '🤖')} <b>Все боты ({len(bots)}, запущено: {running}):</b>",
         parse_mode="HTML",
         reply_markup=admin_bots_keyboard(bots, manager),
     )
@@ -97,12 +99,12 @@ async def admin_resources_handler(update: Update, context: ContextTypes.DEFAULT_
     resources = manager.get_all_resources()
     if not resources:
         await query.edit_message_text(
-            "📊 <b>Ресурсы</b>\n\n<i>Нет запущенных ботов.</i>",
+            f"{pe('stats', '📊')} <b>Ресурсы</b>\n\n<i>Нет запущенных ботов.</i>",
             parse_mode="HTML",
             reply_markup=admin_resources_keyboard(),
         )
         return
-    lines = ["📊 <b>Ресурсы запущенных ботов:</b>\n"]
+    lines = [f"{pe('stats', '📊')} <b>Ресурсы запущенных ботов:</b>\n"]
     for r in resources:
         lines.append(
             f"• <b>{r['display']}</b>\n"
@@ -127,9 +129,10 @@ async def admin_workers_handler(update: Update, context: ContextTypes.DEFAULT_TY
     for w in workers:
         h = await wc.health(w)
         statuses[w["id"]] = h.get("ok", False)
+    online_count = sum(1 for v in statuses.values() if v)
     await query.edit_message_text(
-        f"🖥 <b>Воркеры ({len(workers)})</b>\n\n"
-        + ("Добавьте воркеры для распределения ботов по серверам." if not workers else ""),
+        f"{pe('megaphone', '🖥')} <b>Воркеры ({len(workers)}, онлайн: {online_count})</b>\n\n"
+        + (f"Добавьте воркеры для распределения ботов по серверам." if not workers else ""),
         parse_mode="HTML",
         reply_markup=workers_keyboard(workers, statuses),
     )
@@ -147,13 +150,14 @@ async def admin_worker_detail_handler(update: Update, context: ContextTypes.DEFA
         await query.answer("Воркер не найден.", show_alert=True)
         return
     h = await wc.health(w)
-    status = "🟢 Онлайн" if h.get("ok") else "🔴 Недоступен"
+    status_icon = "🟢" if h.get("ok") else "🔴"
+    status_text = "Онлайн" if h.get("ok") else "Недоступен"
     registry = context.bot_data["registry"]
     bots_count = len(registry.list_bots_by_worker(worker_id))
     await query.edit_message_text(
-        f"🖥 <b>{w['label']}</b>\n\n"
+        f"{pe('megaphone', '🖥')} <b>{w['label']}</b>\n\n"
         f"URL: <code>{w['url']}</code>\n"
-        f"Статус: {status}\n"
+        f"Статус: {status_icon} <b>{status_text}</b>\n"
         f"Ботов: <b>{bots_count}</b>\n"
         f"Запущено: <b>{h.get('running', '—')}</b>\n"
         f"RAM свободно: <b>{h.get('ram_free_mb', '—')} МБ</b>",
@@ -175,9 +179,9 @@ async def admin_worker_resources_handler(update: Update, context: ContextTypes.D
         return
     res = await wc.resources(w)
     if not res:
-        text = f"📊 <b>{w['label']}</b>\n\n<i>Нет запущенных ботов.</i>"
+        text = f"{pe('stats', '📊')} <b>{w['label']}</b>\n\n<i>Нет запущенных ботов.</i>"
     else:
-        lines = [f"📊 <b>{w['label']} — ресурсы:</b>\n"]
+        lines = [f"{pe('stats', '📊')} <b>{w['label']} — ресурсы:</b>\n"]
         for r in res:
             lines.append(f"• <b>{r['display']}</b>\n  CPU: {r['cpu']}% | RAM: {r['ram_mb']} МБ")
         text = "\n".join(lines)
@@ -185,7 +189,7 @@ async def admin_worker_resources_handler(update: Update, context: ContextTypes.D
         text, parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("🔄 Обновить", callback_data=f"admin_worker_res:{worker_id}")],
-            [InlineKeyboardButton("🔙 Назад", callback_data=f"admin_worker:{worker_id}")],
+            [InlineKeyboardButton("◀️ Назад", callback_data=f"admin_worker:{worker_id}")],
         ]),
     )
 
@@ -200,7 +204,7 @@ async def admin_worker_delete_handler(update: Update, context: ContextTypes.DEFA
     if wr:
         wr.remove_worker(worker_id)
     await query.edit_message_text(
-        f"✅ Воркер <b>{worker_id}</b> удалён.\n\n"
+        f"{pe('check', '✅')} Воркер <b>{worker_id}</b> удалён.\n\n"
         f"Боты на этом воркере сохранены в реестре, но недоступны.",
         parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup([
@@ -215,12 +219,14 @@ async def admin_add_worker_entry(update: Update, context: ContextTypes.DEFAULT_T
     if not _is_admin(query.from_user.id, context):
         return
     await query.edit_message_text(
-        "🖥 <b>Добавить воркер</b>\n\n"
+        f"{pe('megaphone', '🖥')} <b>Добавить воркер</b>\n\n"
         "Отправьте URL воркера:\n"
-        "<code>http://1.2.3.4:8000</code>",
+        "<code>http://1.2.3.4:8000</code>\n\n"
+        "<i>Для bothost.ru используйте URL из Cloudflare Quick Tunnel\n"
+        "(смотрите /start на воркере)</i>",
         parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("❌ Отмена", callback_data="admin_workers")]
+            [InlineKeyboardButton("✖️ Отмена", callback_data="admin_workers")]
         ]),
     )
     return WAITING_WORKER_URL
@@ -233,8 +239,8 @@ async def admin_receive_worker_url(update: Update, context: ContextTypes.DEFAULT
         return WAITING_WORKER_URL
     context.user_data["new_worker_url"] = url
     await update.message.reply_text(
-        f"✅ URL: <code>{url}</code>\n\n"
-        "Теперь отправьте <b>секретный ключ</b> воркера\n"
+        f"{pe('check', '✅')} URL: <code>{url}</code>\n\n"
+        f"Теперь отправьте <b>секретный ключ</b> воркера\n"
         "(значение WORKER_SECRET на том сервере):",
         parse_mode="HTML",
     )
@@ -249,12 +255,15 @@ async def admin_receive_worker_secret(update: Update, context: ContextTypes.DEFA
         return ConversationHandler.END
 
     test_worker = {"url": url, "secret": secret}
-    await update.message.reply_text("⏳ Проверяю подключение...")
+    await update.message.reply_text(
+        f"{pe('loading', '⏳')} Проверяю подключение...",
+        parse_mode="HTML",
+    )
     h = await wc.health(test_worker)
     if not h.get("ok"):
         error_detail = h.get("error", "неизвестная ошибка")
         await update.message.reply_text(
-            f"❌ Воркер недоступен.\n\n"
+            f"{pe('cross', '❌')} <b>Воркер недоступен</b>\n\n"
             f"Ошибка: <code>{error_detail}</code>\n\n"
             "Проверьте:\n"
             "• URL доступен из интернета\n"
@@ -272,11 +281,11 @@ async def admin_receive_worker_secret(update: Update, context: ContextTypes.DEFA
     label = f"Worker #{worker_id[1:]}"
     wr.add_worker(worker_id, url, secret, label)
     await update.message.reply_text(
-        f"✅ <b>Воркер добавлен!</b>\n\n"
+        f"{pe('celebrate', '🎉')} <b>Воркер добавлен!</b>\n\n"
         f"ID: <code>{worker_id}</code>\n"
         f"URL: <code>{url}</code>\n"
-        f"Ботов сейчас: {h.get('bots', 0)}\n"
-        f"RAM свободно: {h.get('ram_free_mb', '—')} МБ",
+        f"Ботов сейчас: <b>{h.get('bots', 0)}</b>\n"
+        f"RAM свободно: <b>{h.get('ram_free_mb', '—')} МБ</b>",
         parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("🖥 Воркеры", callback_data="admin_workers")]
@@ -299,10 +308,10 @@ async def admin_download_db_handler(update: Update, context: ContextTypes.DEFAUL
     if not _is_admin(query.from_user.id, context):
         return
     await query.edit_message_text(
-        "📥 Отправляю файлы базы данных...",
+        f"{pe('download', '📥')} Отправляю файлы базы данных...",
         parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔙 Назад", callback_data="admin_menu")]
+            [InlineKeyboardButton("◀️ Назад", callback_data="admin_menu")]
         ]),
     )
     for fname in ("bots_registry.json", "users_registry.json"):
@@ -324,12 +333,12 @@ async def admin_upload_db_entry(update: Update, context: ContextTypes.DEFAULT_TY
     if not _is_admin(query.from_user.id, context):
         return
     await query.edit_message_text(
-        "📤 <b>Загрузить базу данных</b>\n\n"
+        f"{pe('upload', '📤')} <b>Загрузить базу данных</b>\n\n"
         "Отправьте файл <code>bots_registry.json</code> или <code>users_registry.json</code>.\n\n"
         "⚠️ Файл полностью заменит текущую базу данных.",
         parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("❌ Отмена", callback_data="admin_menu")]
+            [InlineKeyboardButton("✖️ Отмена", callback_data="admin_menu")]
         ]),
     )
     return WAITING_DB_FILE
@@ -364,10 +373,10 @@ async def admin_receive_db_handler(update: Update, context: ContextTypes.DEFAULT
     else:
         context.bot_data["user_registry"]._load()
     await update.message.reply_text(
-        f"✅ База данных <code>{doc.file_name}</code> успешно загружена и применена.",
+        f"{pe('check', '✅')} База данных <code>{doc.file_name}</code> успешно загружена и применена.",
         parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔙 В меню", callback_data="admin_menu")]
+            [InlineKeyboardButton("◀️ В меню", callback_data="admin_menu")]
         ]),
     )
     return ConversationHandler.END
@@ -397,7 +406,7 @@ async def admin_user_detail_handler(update: Update, context: ContextTypes.DEFAUL
     sub_status = user_registry.subscription_status(user_id)
     bots = u.get("bots", [])
     text = (
-        f"👤 <b>Пользователь {u.get('username') or user_id}</b>\n\n"
+        f"{pe('profile', '👤')} <b>Пользователь @{u.get('username') or user_id}</b>\n\n"
         f"ID: <code>{user_id}</code>\n"
         f"Тариф: <b>{plan_name}</b>\n"
         f"Подписка: <b>{sub_status}</b>\n"
@@ -407,6 +416,6 @@ async def admin_user_detail_handler(update: Update, context: ContextTypes.DEFAUL
     await query.edit_message_text(
         text, parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔙 Назад", callback_data="admin_users")]
+            [InlineKeyboardButton("◀️ Назад", callback_data="admin_users")]
         ]),
     )

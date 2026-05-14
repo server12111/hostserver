@@ -4,7 +4,7 @@ import os
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
-from keyboards import balance_keyboard, plans_keyboard, currency_keyboard, payment_keyboard, ton_payment_keyboard
+from keyboards import balance_keyboard, plans_keyboard, currency_keyboard, payment_keyboard, ton_payment_keyboard, pe
 from payments import (
     PLANS, create_invoice, poll_invoice,
     get_ton_amount, make_ton_comment, poll_ton_payment, check_ton_payment_once,
@@ -29,11 +29,11 @@ async def balance_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     bots_count = len(u.get("bots", []))
 
     await query.edit_message_text(
-        f"🖥 <b>Мой хостинг</b>\n"
+        f"{pe('wallet', '💼')} <b>Мой хостинг</b>\n"
         f"{_SEP}\n"
-        f"👤 @{username}\n"
-        f"🤖 Слотов: <b>{slots}</b>  |  Ботов: <b>{bots_count} / {slots}</b>\n"
-        f"📅 {sub_status}\n"
+        f"{pe('profile', '👤')} @{username}\n"
+        f"{pe('bot', '🤖')} Слотов: <b>{slots}</b>  ·  Ботов: <b>{bots_count} / {slots}</b>\n"
+        f"{pe('stats', '📅')} {sub_status}\n"
         f"{_SEP}",
         parse_mode="HTML",
         reply_markup=balance_keyboard(),
@@ -44,7 +44,7 @@ async def plans_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     lines = [
-        f"🖥 <b>Хостинг для Python-бота</b>\n{_SEP}",
+        f"{pe('package', '🖥')} <b>Хостинг для Python-бота</b>\n{_SEP}",
         f"▸ 1 бот · 30 дней · +1 слот за покупку\n{_SEP}",
     ]
     for plan in PLANS.values():
@@ -70,7 +70,7 @@ async def buy_plan_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     plan = PLANS[plan_key]
     context.user_data["selected_plan"] = plan_key
     await query.edit_message_text(
-        f"💳 <b>Оплата хостинга</b>\n"
+        f"{pe('money', '💳')} <b>Оплата хостинга</b>\n"
         f"{_SEP}\n"
         f"▸ 1 бот · {plan['ram']} RAM · {plan['disk']} диск\n"
         f"▸ Срок: {plan['days']} дней\n"
@@ -98,7 +98,7 @@ async def pay_currency_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     payload = f"{user_id}:{plan_key}"
 
     await query.edit_message_text(
-        f"⏳ Создаю счёт на <b>{plan['price']} {currency}</b>...",
+        f"{pe('loading', '⏳')} Создаю счёт на <b>{plan['price']} {currency}</b>...",
         parse_mode="HTML",
     )
 
@@ -111,9 +111,11 @@ async def pay_currency_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 
     if not inv:
         await query.edit_message_text(
-            "❌ Не удалось создать счёт.\nПроверьте настройки CRYPTOBOT_TOKEN.",
+            f"{pe('cross', '❌')} Не удалось создать счёт.\n"
+            "Проверьте настройки CRYPTOBOT_TOKEN.",
+            parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("🔙 Назад", callback_data="plans")]
+                [InlineKeyboardButton("◀️ Назад", callback_data="plans")]
             ]),
         )
         return
@@ -122,7 +124,7 @@ async def pay_currency_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     invoice_id = inv.get("invoice_id")
 
     await query.edit_message_text(
-        f"✅ <b>Счёт создан!</b>\n"
+        f"{pe('check', '✅')} <b>Счёт создан!</b>\n"
         f"{_SEP}\n"
         f"▸ 1 хостинг-слот · {plan['days']} дней\n"
         f"▸ Сумма: <b>{plan['price']} {currency}</b>\n"
@@ -150,9 +152,11 @@ async def ton_payment_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     wallet = os.getenv("TON_WALLET", "")
     if not wallet:
         await query.edit_message_text(
-            "❌ TON-кошелёк не настроен.\nОбратитесь к администратору.",
+            f"{pe('cross', '❌')} TON-кошелёк не настроен.\n"
+            "Обратитесь к администратору.",
+            parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("🔙 Назад", callback_data=f"buy_plan:{plan_key}")]
+                [InlineKeyboardButton("◀️ Назад", callback_data=f"buy_plan:{plan_key}")]
             ]),
         )
         return
@@ -169,7 +173,7 @@ async def ton_payment_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     }
 
     await query.edit_message_text(
-        f"💎 <b>Оплата через TON</b>\n"
+        f"{pe('gift', '💎')} <b>Оплата через TON</b>\n"
         f"{_SEP}\n"
         f"▸ 1 хостинг-слот · {plan['days']} дней\n"
         f"▸ Сумма: <b>{amount_ton} TON</b>\n"
@@ -206,7 +210,7 @@ async def ton_check_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(
             "❌ Данные платежа не найдены. Начните оплату заново.",
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("🔙 Назад", callback_data="plans")]
+                [InlineKeyboardButton("◀️ Назад", callback_data="plans")]
             ]),
         )
         return
@@ -218,10 +222,10 @@ async def ton_check_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         from payments import _activate_plan
         await _activate_plan(user_id, plan_key, plan, context.bot, user_registry)
         await query.edit_message_text(
-            f"✅ <b>Оплата подтверждена!</b>\n"
+            f"{pe('celebrate', '🎉')} <b>Оплата подтверждена!</b>\n"
             f"{_SEP}\n"
-            f"🖥 Добавлен 1 хостинг-слот\n"
-            f"🤖 Теперь можно запустить ещё одного бота",
+            f"{pe('package', '🖥')} Добавлен 1 хостинг-слот\n"
+            f"{pe('bot', '🤖')} Теперь можно запустить ещё одного бота",
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("🤖 Мои боты", callback_data="my_bots")]
@@ -229,7 +233,7 @@ async def ton_check_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     else:
         await query.edit_message_text(
-            f"❌ <b>Транзакция не найдена.</b>\n"
+            f"{pe('cross', '❌')} <b>Транзакция не найдена.</b>\n"
             f"{_SEP}\n"
             f"Убедитесь что отправили:\n"
             f"▸ Сумма: <b>{amount_ton} TON</b>\n"

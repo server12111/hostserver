@@ -242,7 +242,7 @@ async def admin_add_worker_entry(update: Update, context: ContextTypes.DEFAULT_T
 async def admin_receive_worker_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
     url = update.message.text.strip()
     if not (url.startswith("http://") or url.startswith("https://")):
-        await update.message.reply_text("❌ Неверный URL. Пример: http://1.2.3.4:8000")
+        await update.message.reply_text(f"{pe('cross', '❌')} Неверный URL. Пример: http://1.2.3.4:8000", parse_mode="HTML")
         return WAITING_WORKER_URL
     context.user_data["new_worker_url"] = url
     await update.message.reply_text(
@@ -258,7 +258,7 @@ async def admin_receive_worker_secret(update: Update, context: ContextTypes.DEFA
     secret = update.message.text.strip()
     url = context.user_data.pop("new_worker_url", "")
     if not url:
-        await update.message.reply_text("❌ Ошибка сессии. Начните заново.")
+        await update.message.reply_text(f"{pe('cross', '❌')} Ошибка сессии. Начните заново.", parse_mode="HTML")
         return ConversationHandler.END
 
     test_worker = {"url": url, "secret": secret}
@@ -357,11 +357,11 @@ async def admin_receive_db_handler(update: Update, context: ContextTypes.DEFAULT
     doc = update.message.document
     allowed = ("bots_registry.json", "users_registry.json")
     if not doc or not doc.file_name.endswith(".json"):
-        await update.message.reply_text("❌ Отправьте файл в формате .json")
+        await update.message.reply_text(f"{pe('cross', '❌')} Отправьте файл в формате .json", parse_mode="HTML")
         return WAITING_DB_FILE
     if doc.file_name not in allowed:
         await update.message.reply_text(
-            f"❌ Неверное имя файла.\n"
+            f"{pe('cross', '❌')} Неверное имя файла.\n"
             f"Допустимые: <code>bots_registry.json</code>, <code>users_registry.json</code>",
             parse_mode="HTML",
         )
@@ -371,7 +371,7 @@ async def admin_receive_db_handler(update: Update, context: ContextTypes.DEFAULT
     try:
         data = json.loads(data_bytes)
     except Exception:
-        await update.message.reply_text("❌ Файл повреждён — не удалось разобрать JSON.")
+        await update.message.reply_text(f"{pe('cross', '❌')} Файл повреждён — не удалось разобрать JSON.", parse_mode="HTML")
         return WAITING_DB_FILE
     fpath = _DB_FILES[doc.file_name]
     with open(fpath, "w", encoding="utf-8") as f:

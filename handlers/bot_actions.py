@@ -261,12 +261,12 @@ async def config_save_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     from telegram.ext import ConversationHandler
     bot_name = context.user_data.get("config_for")
     if not bot_name:
-        await update.message.reply_text("❌ Ошибка сессии. Попробуйте снова.")
+        await update.message.reply_text(f"{pe('cross', '❌')} Ошибка сессии. Попробуйте снова.", parse_mode="HTML")
         return ConversationHandler.END
     registry = context.bot_data["registry"]
     bot = registry.get_bot(bot_name)
     if not bot:
-        await update.message.reply_text("❌ Бот не найден.")
+        await update.message.reply_text(f"{pe('cross', '❌')} Бот не найден.", parse_mode="HTML")
         return ConversationHandler.END
     new_content = update.message.text.strip()
     worker = _get_worker(bot, context)
@@ -333,17 +333,17 @@ async def packages_install_handler(update: Update, context: ContextTypes.DEFAULT
     from telegram.ext import ConversationHandler
     bot_name = context.user_data.get("installing_for")
     if not bot_name:
-        await update.message.reply_text("❌ Ошибка сессии.")
+        await update.message.reply_text(f"{pe('cross', '❌')} Ошибка сессии.", parse_mode="HTML")
         return ConversationHandler.END
     registry = context.bot_data["registry"]
     manager = context.bot_data["manager"]
     bot = registry.get_bot(bot_name)
     if not bot:
-        await update.message.reply_text("❌ Бот не найден.")
+        await update.message.reply_text(f"{pe('cross', '❌')} Бот не найден.", parse_mode="HTML")
         return ConversationHandler.END
     packages = update.message.text.split()
     if not packages:
-        await update.message.reply_text("❌ Введите хотя бы один пакет.")
+        await update.message.reply_text(f"{pe('cross', '❌')} Введите хотя бы один пакет.", parse_mode="HTML")
         return WAITING_PACKAGES
     status_msg = await update.message.reply_text(
         f"{pe('loading', '⏳')} Устанавливаю: <code>{' '.join(packages)}</code>...",
@@ -372,7 +372,7 @@ async def cancel_packages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     manager = context.bot_data["manager"]
     bot = registry.get_bot(bot_name)
     if not bot:
-        await query.edit_message_text("❌ Бот не найден.")
+        await query.edit_message_text(f"{pe('cross', '❌')} Бот не найден.", parse_mode="HTML")
         return ConversationHandler.END
     is_running = _is_running(bot, manager)
     await query.edit_message_text(
@@ -512,15 +512,15 @@ async def receive_update_zip(update: Update, context: ContextTypes.DEFAULT_TYPE)
     manager = context.bot_data["manager"]
     bot = registry.get_bot(bot_name)
     if not bot:
-        await update.message.reply_text("❌ Бот не найден.")
+        await update.message.reply_text(f"{pe('cross', '❌')} Бот не найден.", parse_mode="HTML")
         return ConversationHandler.END
     doc = update.message.document
     if not doc or not doc.file_name.endswith(".zip"):
-        await update.message.reply_text("❌ Отправьте файл в формате .zip")
+        await update.message.reply_text(f"{pe('cross', '❌')} Отправьте файл в формате .zip", parse_mode="HTML")
         return WAITING_UPDATE_ZIP
     worker = _get_worker(bot, context)
     if not worker:
-        await update.message.reply_text("❌ Воркер недоступен.")
+        await update.message.reply_text(f"{pe('cross', '❌')} Воркер недоступен.", parse_mode="HTML")
         return ConversationHandler.END
     status_msg = await update.message.reply_text(
         f"{pe('loading', '⏳')} Загружаю и обновляю код...",

@@ -49,7 +49,9 @@ async def bot_info_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     bot = registry.get_bot(bot_name)
     if not bot:
-        await query.edit_message_text("❌ Бот не найден.")
+        await query.edit_message_text(
+            f"{pe('cross', '❌')} Бот не найден.", parse_mode="HTML"
+        )
         return
 
     if not _is_admin(user_id, context) and bot.get("owner_id") != user_id:
@@ -63,7 +65,7 @@ async def bot_info_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     status_icon = "🟢" if is_running else "🔴"
     status_text = "Запущен" if is_running else "Остановлен"
-    source_text = f"{pe('lock', '🔗')} Git" if bot.get("source") == "git" else f"{pe('package', '📦')} ZIP"
+    source_text = f"🔗 Git" if bot.get("source") == "git" else f"{pe('package', '📦')} ZIP"
     worker_line = ""
     if bot.get("worker_id"):
         worker_line = f"\n{pe('stats', '🖥')} Воркер: <code>{bot['worker_id']}</code>"

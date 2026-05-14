@@ -126,7 +126,7 @@ async def receive_git_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
     git_url = update.message.text.strip()
 
     if not (git_url.startswith("http://") or git_url.startswith("https://")):
-        await update.message.reply_text("❌ Неверный URL. Отправьте ссылку на Git-репозиторий.")
+        await update.message.reply_text(f"{pe('cross', '❌')} Неверный URL. Отправьте ссылку на Git-репозиторий.", parse_mode="HTML")
         return WAITING_GIT_URL
 
     raw_name = git_url.rstrip("/").split("/")[-1]
@@ -281,7 +281,7 @@ async def _finalize_bot(
 # ─── Не-ZIP документ ──────────────────────────────────────────────────────────
 async def non_zip_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "❌ Пожалуйста, отправьте файл в формате <b>.zip</b>.",
+        f"{pe('cross', '❌')} Отправьте файл в формате <b>.zip</b>",
         parse_mode="HTML",
     )
     return WAITING_ZIP

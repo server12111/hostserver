@@ -238,6 +238,11 @@ def admin_menu_keyboard() -> InlineKeyboardMarkup:
             _btn("Воркеры", "megaphone", callback_data="admin_workers"),
         ],
         [
+            _btn("Рассылка",    "notify", callback_data="admin_broadcast"),
+            _btn("Выдать слот", "gift",   callback_data="admin_gift"),
+        ],
+        [_btn("Статистика", "stats", callback_data="admin_stats")],
+        [
             _btn("Скачать БД",  "download", callback_data="admin_download_db"),
             _btn("Загрузить БД","upload",   callback_data="admin_upload_db"),
         ],
@@ -309,4 +314,11 @@ def admin_resources_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [_btn("Обновить", "loading",  callback_data="admin_resources")],
         [_btn("Назад",    "settings", callback_data="admin_menu")],
+    ])
+
+
+def broadcast_confirm_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [_btn("Отправить всем", "notify", callback_data="admin_broadcast_send")],
+        [_btn("Отмена",         "cross",  callback_data="admin_menu")],
     ])

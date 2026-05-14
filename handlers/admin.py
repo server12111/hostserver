@@ -1,6 +1,7 @@
 import io
 import json
 import os
+from datetime import datetime, timedelta
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
@@ -8,7 +9,8 @@ from telegram.ext import ContextTypes, ConversationHandler
 from keyboards import (
     admin_menu_keyboard, admin_users_keyboard,
     admin_bots_keyboard, admin_resources_keyboard,
-    workers_keyboard, worker_detail_keyboard, pe,
+    workers_keyboard, worker_detail_keyboard,
+    broadcast_confirm_keyboard, pe,
 )
 import worker_client as wc
 from registry import REGISTRY_FILE
@@ -22,6 +24,10 @@ _DB_FILES = {
 WAITING_WORKER_URL = 30
 WAITING_WORKER_SECRET = 31
 WAITING_DB_FILE = 32
+WAITING_BROADCAST_TEXT = 33
+WAITING_BROADCAST_CONFIRM = 34
+WAITING_GIFT_USER = 35
+WAITING_GIFT_DAYS = 36
 
 
 def _is_admin(user_id: int, context) -> bool:
@@ -425,5 +431,251 @@ async def admin_user_detail_handler(update: Update, context: ContextTypes.DEFAUL
         text, parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("◀️ Назад", callback_data="admin_users")]
+        ]),
+    )
+
+
+# ─── Рассылка ─────────────────────────────────────────────────────────────────
+async def admin_broadcast_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    if not _is_admin(query.from_user.id, context):
+        return ConversationHandler.END
+    user_registry = context.bot_data["user_registry"]
+    users_count = len(user_registry.list_users())
+    await query.edit_message_text(
+        f"{pe('notify', '📢')} <b>Рассылка</b>\n\n"
+        f"Получателей: <b>{users_count}</b>\n\n"
+        "Отправьте текст сообщения. Поддерживается HTML-форматирование.",
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("✖️ Отмена", callback_data="admin_menu")]
+        ]),
+    )
+    return WAITING_BROADCAST_TEXT
+
+
+async def admin_broadcast_preview(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not _is_admin(update.effective_user.id, context):
+        return ConversationHandler.END
+    text = update.message.text
+    context.user_data["broadcast_text"] = text
+    user_registry = context.bot_data["user_registry"]
+    users_count = len(user_registry.list_users())
+    await update.message.reply_text(
+        f"{pe('notify', '📢')} <b>Подтверждение рассылки</b>\n\n"
+        f"Получателей: <b>{users_count}</b>\n\n"
+        "Нажмите «Отправить», чтобы разослать сообщение всем пользователям.",
+        parse_mode="HTML",
+        reply_markup=broadcast_confirm_keyboard(),
+    )
+    return WAITING_BROADCAST_CONFIRM
+
+
+async def admin_broadcast_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    if not _is_admin(query.from_user.id, context):
+        return ConversationHandler.END
+    text = context.user_data.pop("broadcast_text", "")
+    if not text:
+        await query.edit_message_text(
+            f"{pe('cross', '❌')} Текст рассылки не найден.", parse_mode="HTML"
+        )
+        return ConversationHandler.END
+    user_registry = context.bot_data["user_registry"]
+    users = user_registry.list_users()
+    await query.edit_message_text(
+        f"{pe('loading', '⏳')} Рассылка... 0 / {len(users)}",
+        parse_mode="HTML",
+    )
+    sent = 0
+    failed = 0
+    for u in users:
+        try:
+            await context.bot.send_message(chat_id=u["user_id"], text=text, parse_mode="HTML")
+            sent += 1
+        except Exception:
+            failed += 1
+    await query.edit_message_text(
+        f"{pe('check', '✅')} <b>Рассылка завершена!</b>\n\n"
+        f"Отправлено: <b>{sent}</b>\n"
+        f"Ошибок: <b>{failed}</b>",
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("◀️ В меню", callback_data="admin_menu")]
+        ]),
+    )
+    return ConversationHandler.END
+
+
+async def admin_cancel_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    context.user_data.pop("broadcast_text", None)
+    await admin_command_handler(update, context)
+    return ConversationHandler.END
+
+
+# ─── Выдача слота ─────────────────────────────────────────────────────────────
+async def admin_gift_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    if not _is_admin(query.from_user.id, context):
+        return ConversationHandler.END
+    await query.edit_message_text(
+        f"{pe('gift', '🎁')} <b>Выдать хостинг-слот</b>\n\n"
+        "Введите <b>user_id</b> или <b>@username</b> пользователя:",
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("✖️ Отмена", callback_data="admin_menu")]
+        ]),
+    )
+    return WAITING_GIFT_USER
+
+
+async def admin_gift_receive_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not _is_admin(update.effective_user.id, context):
+        return ConversationHandler.END
+    inp = update.message.text.strip().lstrip("@")
+    user_registry = context.bot_data["user_registry"]
+    found = next(
+        (u for u in user_registry.list_users()
+         if str(u["user_id"]) == inp or u.get("username") == inp),
+        None,
+    )
+    if not found:
+        await update.message.reply_text(
+            f"{pe('cross', '❌')} Пользователь не найден.\n"
+            "Введите ID или @username ещё раз:",
+            parse_mode="HTML",
+        )
+        return WAITING_GIFT_USER
+    context.user_data["gift_user_id"] = found["user_id"]
+    context.user_data["gift_username"] = found.get("username") or str(found["user_id"])
+    sub = found.get("subscription_until")
+    sub_text = datetime.fromisoformat(sub).strftime("%d.%m.%Y") if sub else "нет"
+    await update.message.reply_text(
+        f"{pe('profile', '👤')} Найден: <b>@{found.get('username') or found['user_id']}</b>\n"
+        f"ID: <code>{found['user_id']}</code>\n"
+        f"Подписка до: <b>{sub_text}</b>\n\n"
+        "Введите количество дней для добавления:",
+        parse_mode="HTML",
+    )
+    return WAITING_GIFT_DAYS
+
+
+async def admin_gift_receive_days(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not _is_admin(update.effective_user.id, context):
+        return ConversationHandler.END
+    try:
+        days = int(update.message.text.strip())
+        if days <= 0:
+            raise ValueError
+    except ValueError:
+        await update.message.reply_text(
+            f"{pe('cross', '❌')} Введите целое положительное число дней.",
+            parse_mode="HTML",
+        )
+        return WAITING_GIFT_DAYS
+    target_user_id = context.user_data.pop("gift_user_id", None)
+    target_username = context.user_data.pop("gift_username", "?")
+    if not target_user_id:
+        await update.message.reply_text(
+            f"{pe('cross', '❌')} Ошибка сессии. Начните заново.", parse_mode="HTML"
+        )
+        return ConversationHandler.END
+    user_registry = context.bot_data["user_registry"]
+    u = user_registry.get_user(target_user_id)
+    if not u:
+        await update.message.reply_text(
+            f"{pe('cross', '❌')} Пользователь не найден в реестре.", parse_mode="HTML"
+        )
+        return ConversationHandler.END
+    sub = u.get("subscription_until")
+    if sub and datetime.fromisoformat(sub) > datetime.now():
+        base = datetime.fromisoformat(sub)
+    else:
+        base = datetime.now()
+    new_until = base + timedelta(days=days)
+    user_registry.update_user(
+        target_user_id,
+        subscription_until=new_until.isoformat(timespec="seconds"),
+        max_bots=u.get("max_bots", 0) + 1,
+    )
+    try:
+        await context.bot.send_message(
+            chat_id=target_user_id,
+            text=(
+                f"{pe('gift', '🎁')} <b>Вам выдан хостинг-слот!</b>\n\n"
+                f"Добавлен 1 слот\n"
+                f"Активен до: <b>{new_until.strftime('%d.%m.%Y')}</b>"
+            ),
+            parse_mode="HTML",
+        )
+        notif_text = "Уведомление отправлено."
+    except Exception:
+        notif_text = "Уведомить пользователя не удалось."
+    await update.message.reply_text(
+        f"{pe('check', '✅')} <b>Слот выдан!</b>\n\n"
+        f"Пользователь: @{target_username} (<code>{target_user_id}</code>)\n"
+        f"Добавлено дней: <b>{days}</b>\n"
+        f"Активен до: <b>{new_until.strftime('%d.%m.%Y')}</b>\n\n"
+        f"{notif_text}",
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("◀️ В меню", callback_data="admin_menu")]
+        ]),
+    )
+    return ConversationHandler.END
+
+
+async def admin_cancel_gift(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    context.user_data.pop("gift_user_id", None)
+    context.user_data.pop("gift_username", None)
+    await admin_command_handler(update, context)
+    return ConversationHandler.END
+
+
+# ─── Статистика ───────────────────────────────────────────────────────────────
+async def admin_stats_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    if not _is_admin(query.from_user.id, context):
+        return
+    from payments import PLANS
+    user_registry = context.bot_data["user_registry"]
+    registry = context.bot_data["registry"]
+    manager = context.bot_data["manager"]
+    users = user_registry.list_users()
+    now = datetime.now()
+    active_subs = [
+        u for u in users
+        if u.get("subscription_until") and datetime.fromisoformat(u["subscription_until"]) > now
+    ]
+    all_bots = registry.list_bots()
+    running_bots = [
+        b for b in all_bots
+        if (b.get("worker_id") and b.get("status") == "running")
+        or (not b.get("worker_id") and manager.is_running(b["name"]))
+    ]
+    monthly_revenue = sum(
+        PLANS.get(u.get("plan", ""), {}).get("price", 0)
+        for u in active_subs
+        if u.get("plan")
+    )
+    await query.edit_message_text(
+        f"{pe('stats', '📊')} <b>Статистика</b>\n\n"
+        f"👥 Пользователей: <b>{len(users)}</b>\n"
+        f"🟢 Активных подписок: <b>{len(active_subs)}</b>\n"
+        f"🤖 Всего ботов: <b>{len(all_bots)}</b>\n"
+        f"▶️ Запущено: <b>{len(running_bots)}</b>\n\n"
+        f"💰 Доход в месяц: ~<b>{monthly_revenue:.1f} USDT</b>",
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔄 Обновить", callback_data="admin_stats")],
+            [InlineKeyboardButton("◀️ Назад", callback_data="admin_menu")],
         ]),
     )

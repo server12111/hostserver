@@ -56,7 +56,14 @@ from handlers.admin import (
     admin_receive_worker_secret, admin_cancel_worker,
     admin_download_db_handler, admin_upload_db_entry,
     admin_receive_db_handler, admin_cancel_db,
+    admin_broadcast_entry, admin_broadcast_preview,
+    admin_broadcast_confirm, admin_cancel_broadcast,
+    admin_gift_entry, admin_gift_receive_user,
+    admin_gift_receive_days, admin_cancel_gift,
+    admin_stats_handler,
     WAITING_WORKER_URL, WAITING_WORKER_SECRET, WAITING_DB_FILE,
+    WAITING_BROADCAST_TEXT, WAITING_BROADCAST_CONFIRM,
+    WAITING_GIFT_USER, WAITING_GIFT_DAYS,
 )
 from worker_registry import WorkerRegistry
 
@@ -146,6 +153,7 @@ async def _sync_worker_states(bot_data: dict) -> None:
 
 
 async def _renewal_reminder(bot, user_registry):
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
     while True:
         await asyncio.sleep(3600)
         now = datetime.now()
@@ -155,23 +163,37 @@ async def _renewal_reminder(bot, user_registry):
                 continue
             dt = datetime.fromisoformat(sub)
             days_left = (dt - now).days
-            if days_left == 3:
-                try:
-                    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-                    await bot.send_message(
-                        chat_id=u["user_id"],
-                        text=(
-                            f"⚠️ <b>Хостинг заканчивается!</b>\n\n"
-                            f"До окончания: <b>3 дня</b> ({dt.strftime('%d.%m.%Y')})\n\n"
-                            f"Продлите хостинг, чтобы боты продолжали работать."
-                        ),
-                        parse_mode="HTML",
-                        reply_markup=InlineKeyboardMarkup([
-                            [InlineKeyboardButton("🖥 Продлить хостинг", callback_data="plans")]
-                        ]),
-                    )
-                except Exception:
-                    pass
+            if days_left not in (7, 3, 1):
+                continue
+            if days_left == 7:
+                text = (
+                    f"⚠️ <b>Хостинг заканчивается через 7 дней</b>\n\n"
+                    f"Дата окончания: <b>{dt.strftime('%d.%m.%Y')}</b>\n\n"
+                    f"Продлите хостинг заранее, чтобы боты работали без перебоев."
+                )
+            elif days_left == 3:
+                text = (
+                    f"⚠️ <b>Хостинг заканчивается!</b>\n\n"
+                    f"До окончания: <b>3 дня</b> ({dt.strftime('%d.%m.%Y')})\n\n"
+                    f"Продлите хостинг, чтобы боты продолжали работать."
+                )
+            else:
+                text = (
+                    f"🔴 <b>Хостинг заканчивается завтра!</b>\n\n"
+                    f"Дата окончания: <b>{dt.strftime('%d.%m.%Y')}</b>\n\n"
+                    f"Продлите хостинг сейчас, чтобы избежать остановки ботов."
+                )
+            try:
+                await bot.send_message(
+                    chat_id=u["user_id"],
+                    text=text,
+                    parse_mode="HTML",
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("🖥 Продлить хостинг", callback_data="plans")]
+                    ]),
+                )
+            except Exception:
+                pass
 
 
 async def post_init(application: Application) -> None:
@@ -293,12 +315,45 @@ def build_app() -> Application:
         per_message=False,
     )
 
+    # ── ConversationHandler: рассылка ─────────────────────────────────────────
+    broadcast_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(admin_broadcast_entry, pattern="^admin_broadcast$")],
+        states={
+            WAITING_BROADCAST_TEXT: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, admin_broadcast_preview),
+            ],
+            WAITING_BROADCAST_CONFIRM: [
+                CallbackQueryHandler(admin_broadcast_confirm, pattern="^admin_broadcast_send$"),
+                CallbackQueryHandler(admin_cancel_broadcast, pattern="^admin_menu$"),
+            ],
+        },
+        fallbacks=[CallbackQueryHandler(admin_cancel_broadcast, pattern="^admin_menu$")],
+        per_message=False,
+    )
+
+    # ── ConversationHandler: выдача слота ─────────────────────────────────────
+    gift_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(admin_gift_entry, pattern="^admin_gift$")],
+        states={
+            WAITING_GIFT_USER: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, admin_gift_receive_user),
+            ],
+            WAITING_GIFT_DAYS: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, admin_gift_receive_days),
+            ],
+        },
+        fallbacks=[CallbackQueryHandler(admin_cancel_gift, pattern="^admin_menu$")],
+        per_message=False,
+    )
+
     app.add_handler(add_bot_conv)
     app.add_handler(packages_conv)
     app.add_handler(config_conv)
     app.add_handler(add_worker_conv)
     app.add_handler(update_zip_conv)
     app.add_handler(upload_db_conv)
+    app.add_handler(broadcast_conv)
+    app.add_handler(gift_conv)
 
     # ── Команды ───────────────────────────────────────────────────────────────
     app.add_handler(CommandHandler("start", start_handler))
@@ -341,6 +396,7 @@ def build_app() -> Application:
     app.add_handler(CallbackQueryHandler(admin_worker_resources_handler, pattern="^admin_worker_res:"))
     app.add_handler(CallbackQueryHandler(admin_worker_delete_handler, pattern="^admin_worker_del:"))
     app.add_handler(CallbackQueryHandler(admin_download_db_handler, pattern="^admin_download_db$"))
+    app.add_handler(CallbackQueryHandler(admin_stats_handler, pattern="^admin_stats$"))
 
     app.add_error_handler(error_handler)
     return app

@@ -66,6 +66,9 @@ from handlers.admin import (
     WAITING_GIFT_USER, WAITING_GIFT_DAYS,
 )
 from worker_registry import WorkerRegistry
+from tg_patches import apply_patches
+
+apply_patches()
 
 load_dotenv()
 TOKEN = os.getenv("BOT_TOKEN")

@@ -111,22 +111,17 @@ async def admin_resources_handler(update: Update, context: ContextTypes.DEFAULT_
     manager = context.bot_data["manager"]
     resources = manager.get_all_resources()
     if not resources:
-        await query.edit_message_text(
-            f"{pe('stats', '📊')} <b>Ресурсы</b>\n\n<i>Нет запущенных ботов.</i>",
-            parse_mode="HTML",
-            reply_markup=admin_resources_keyboard(),
-        )
-        return
-    lines = [f"{pe('stats', '📊')} <b>Ресурсы запущенных ботов:</b>\n"]
-    for r in resources:
-        lines.append(
-            f"• <b>{r['display']}</b>\n"
-            f"  CPU: {r['cpu']}% | RAM: {r['ram_mb']} MB"
-        )
+        text = f"{pe('stats', '📊')} <b>Ресурсы</b>\n\n<i>Нет запущенных ботов.</i>"
+    else:
+        lines = [f"{pe('stats', '📊')} <b>Ресурсы запущенных ботов:</b>\n"]
+        for r in resources:
+            lines.append(
+                f"• <b>{r['display']}</b>\n"
+                f"  CPU: {r['cpu']}% | RAM: {r['ram_mb']} MB"
+            )
+        text = "\n".join(lines)
     await query.edit_message_text(
-        "\n".join(lines),
-        parse_mode="HTML",
-        reply_markup=admin_resources_keyboard(),
+        text, parse_mode="HTML", reply_markup=admin_resources_keyboard(),
     )
 
 

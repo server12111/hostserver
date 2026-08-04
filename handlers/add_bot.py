@@ -2,7 +2,6 @@ import asyncio
 import html
 import io
 import os
-import shutil
 import zipfile
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -69,7 +68,8 @@ async def add_zip_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(
         f"{pe('package', '📦')} <b>Загрузка ZIP-архива</b>\n\n"
         "Отправьте <b>ZIP-архив</b> с вашим Python-ботом.\n\n"
-        "Архив должен содержать <code>main.py</code> или <code>bot.py</code> "
+        "Архив должен содержать один из файлов: <code>main.py</code>, <code>bot.py</code>, "
+        "<code>app.py</code>, <code>run.py</code>, <code>start.py</code> или <code>__main__.py</code> "
         "и опционально <code>requirements.txt</code>.",
         parse_mode="HTML",
     )
@@ -305,25 +305,3 @@ def _unique_name(base: str, registry) -> str:
     return name
 
 
-def _find_entry_point(bot_path: str) -> str | None:
-    for name in ("main.py", "bot.py"):
-        if os.path.exists(os.path.join(bot_path, name)):
-            return name
-    subdirs = [d for d in os.listdir(bot_path)
-               if os.path.isdir(os.path.join(bot_path, d)) and d not in ("venv", ".git")]
-    if len(subdirs) == 1:
-        sub_path = os.path.join(bot_path, subdirs[0])
-        for name in ("main.py", "bot.py"):
-            if os.path.exists(os.path.join(sub_path, name)):
-                _flatten_subdir(bot_path, sub_path)
-                return name
-    return None
-
-
-def _flatten_subdir(bot_path: str, sub_path: str):
-    for item in os.listdir(sub_path):
-        src = os.path.join(sub_path, item)
-        dst = os.path.join(bot_path, item)
-        if not os.path.exists(dst):
-            shutil.move(src, dst)
-    shutil.rmtree(sub_path, ignore_errors=True)

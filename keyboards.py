@@ -1,7 +1,11 @@
+import os
 import re
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from payments import PLANS, CURRENCIES
+
+PRIVACY_POLICY_URL = os.getenv("PRIVACY_POLICY_URL", "")
+TERMS_URL = os.getenv("TERMS_URL", "")
 
 # ─── Status icons ─────────────────────────────────────────────────────────────
 STATUS_ICON = {"running": "🟢", "stopped": "🔴"}
@@ -65,13 +69,19 @@ def make_bot_key(display_name: str, user_id: int) -> str:
 
 # ─── Главное меню ─────────────────────────────────────────────────────────────
 def main_menu_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([
+    rows = [
         [
             _btn("Мои боты",      "bot",    callback_data="my_bots"),
             _btn("Добавить бота", "upload", callback_data="add_bot"),
         ],
         [_btn("Мой хостинг", "wallet", callback_data="balance")],
-    ])
+    ]
+    if PRIVACY_POLICY_URL and TERMS_URL:
+        rows.append([
+            _btn("Конфиденциальность", "info", url=PRIVACY_POLICY_URL),
+            _btn("Соглашение",         "info", url=TERMS_URL),
+        ])
+    return InlineKeyboardMarkup(rows)
 
 
 # ─── Список ботов ─────────────────────────────────────────────────────────────

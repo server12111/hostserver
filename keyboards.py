@@ -101,13 +101,13 @@ def bot_list_keyboard(bots: list[dict], manager) -> InlineKeyboardMarkup:
 
 
 # ─── Детали бота ──────────────────────────────────────────────────────────────
-def bot_detail_keyboard(bot_name: str, is_running: bool) -> InlineKeyboardMarkup:
+def bot_detail_keyboard(bot_name: str, is_running: bool, is_admin: bool = False) -> InlineKeyboardMarkup:
     action = (
         _btn("Остановить", "cross", callback_data=f"stop_bot:{bot_name}")
         if is_running else
         _btn("Запустить",  "check", callback_data=f"start_bot:{bot_name}")
     )
-    return InlineKeyboardMarkup([
+    rows = [
         [action, _btn("Перезапуск", "loading", callback_data=f"restart_bot:{bot_name}")],
         [
             _btn("Логи",   "eye",    callback_data=f"logs:{bot_name}"),
@@ -118,9 +118,18 @@ def bot_detail_keyboard(bot_name: str, is_running: bool) -> InlineKeyboardMarkup
             _btn("Файлы",  "file",    callback_data=f"files:{bot_name}"),
         ],
         [_btn("Обновити код",   "upload", callback_data=f"update_bot:{bot_name}")],
-        [_btn("Видалити бота",  "trash",  callback_data=f"delete:{bot_name}")],
-        [_btn("До списку ботів","bot",    callback_data="my_bots")],
-    ])
+    ]
+    if is_admin:
+        rows.append([_btn("Переназначить воркер", "megaphone", callback_data=f"reassign:{bot_name}")])
+    rows.append([_btn("Видалити бота",  "trash",  callback_data=f"delete:{bot_name}")])
+    rows.append([_btn("До списку ботів","bot",    callback_data="my_bots")])
+    return InlineKeyboardMarkup(rows)
+
+
+def reassign_worker_keyboard(bot_name: str, workers: list[dict]) -> InlineKeyboardMarkup:
+    rows = [[_btn(w["label"], "megaphone", callback_data=f"reassign_do:{bot_name}:{w['id']}")] for w in workers]
+    rows.append([_btn("Отмена", "cross", callback_data=f"bot_info:{bot_name}")])
+    return InlineKeyboardMarkup(rows)
 
 
 def update_source_keyboard(bot_name: str, has_git: bool) -> InlineKeyboardMarkup:

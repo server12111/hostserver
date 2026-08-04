@@ -9,6 +9,7 @@ from telegram.ext import ContextTypes, ConversationHandler
 
 from keyboards import sanitize_bot_name, make_bot_key, add_source_keyboard, bot_detail_keyboard, pe
 import worker_client
+import bot_data_backup
 
 WAITING_ZIP = 1
 WAITING_GIT_URL = 2
@@ -224,6 +225,7 @@ async def _finalize_bot(
             f"{pe('loading', '⏳')} Деплою бота <b>{display_name}</b> на <b>{chosen_worker['label']}</b>...",
             parse_mode="HTML",
         )
+        await bot_data_backup.push_to_worker(worker_client, chosen_worker, bot_name)
         if source == "zip":
             ok, entry_point = await worker_client.deploy_zip(
                 chosen_worker, bot_name, zip_bytes, display_name, user_id
@@ -232,6 +234,8 @@ async def _finalize_bot(
             ok, entry_point = await worker_client.deploy_git(
                 chosen_worker, bot_name, git_url, display_name, user_id
             )
+        if ok:
+            await bot_data_backup.pull_from_worker(worker_client, chosen_worker, bot_name)
         if not ok:
             await status_msg.edit_text(
                 f"{pe('cross', '❌')} <b>Ошибка деплоя:</b>\n<code>{html.escape(entry_point)}</code>",

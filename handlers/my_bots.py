@@ -80,5 +80,5 @@ async def bot_info_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await query.edit_message_text(
         text, parse_mode="HTML",
-        reply_markup=bot_detail_keyboard(bot_name, is_running),
+        reply_markup=bot_detail_keyboard(bot_name, is_running, is_admin=_is_admin(user_id, context)),
     )

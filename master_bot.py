@@ -40,6 +40,7 @@ from handlers.bot_actions import (
     config_view_handler, config_edit_entry, config_save_handler, cancel_config,
     packages_entry_handler, packages_install_handler, cancel_packages,
     update_bot_handler, update_git_handler, update_zip_entry, receive_update_zip,
+    reassign_worker_entry, reassign_worker_do,
     WAITING_PACKAGES, WAITING_CONFIG, WAITING_UPDATE_ZIP,
 )
 from handlers.files import files_list_handler, download_file_handler
@@ -585,6 +586,8 @@ def build_app() -> Application:
     app.add_handler(CallbackQueryHandler(logs_handler, pattern="^logs:"))
     app.add_handler(CallbackQueryHandler(update_bot_handler, pattern="^update_bot:"))
     app.add_handler(CallbackQueryHandler(update_git_handler, pattern="^update_git:"))
+    app.add_handler(CallbackQueryHandler(reassign_worker_entry, pattern="^reassign:"))
+    app.add_handler(CallbackQueryHandler(reassign_worker_do, pattern="^reassign_do:"))
     app.add_handler(CallbackQueryHandler(config_view_handler, pattern="^config:"))
     app.add_handler(CallbackQueryHandler(files_list_handler, pattern="^files:"))
     app.add_handler(CallbackQueryHandler(download_file_handler, pattern="^dl_file:"))

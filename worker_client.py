@@ -198,3 +198,32 @@ async def download_file(worker: dict, bot_name: str, fname: str) -> bytes | None
     except Exception:
         pass
     return None
+
+
+async def download_data_backup(worker: dict, bot_name: str) -> bytes:
+    """Забирает с воркера текущий бэкап БД бота (zip), для хранения на главном боте."""
+    try:
+        async with _session() as s:
+            r = await s.get(_url(worker, f"/data_backup/{bot_name}"),
+                            headers=_headers(worker), timeout=_TIMEOUT_LONG)
+            if r.status == 200:
+                return await r.read()
+    except Exception:
+        pass
+    return b""
+
+
+async def upload_data_backup(worker: dict, bot_name: str, zip_bytes: bytes) -> bool:
+    """Заливает на воркер ранее сохранённый бэкап БД бота — перед деплоем на новый/другой воркер."""
+    if not zip_bytes:
+        return True
+    try:
+        async with _session() as s:
+            form = aiohttp.FormData()
+            form.add_field("file", zip_bytes, filename=f"{bot_name}.zip",
+                           content_type="application/zip")
+            r = await s.post(_url(worker, f"/data_backup/{bot_name}"), data=form,
+                             headers=_headers(worker), timeout=_TIMEOUT_LONG)
+            return r.status == 200
+    except Exception:
+        return False

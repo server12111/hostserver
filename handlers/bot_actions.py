@@ -7,9 +7,10 @@ from telegram.ext import ContextTypes, ConversationHandler
 from keyboards import (
     bot_detail_keyboard, delete_confirm_keyboard, logs_keyboard,
     packages_keyboard, config_keyboard, config_edit_keyboard,
-    update_source_keyboard, pe,
+    update_source_keyboard, reassign_worker_keyboard, pe,
 )
 import worker_client as wc
+import bot_data_backup
 
 WAITING_UPDATE_ZIP = 40
 
@@ -80,7 +81,7 @@ async def start_bot_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"{_bot_status_text(bot, bot_name, is_running)}\n\n"
         f"{result_icon} {_esc(msg)}",
         parse_mode="HTML",
-        reply_markup=bot_detail_keyboard(bot_name, is_running),
+        reply_markup=bot_detail_keyboard(bot_name, is_running, is_admin=_is_admin(query.from_user.id, context)),
     )
 
 
@@ -110,7 +111,7 @@ async def stop_bot_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"{_bot_status_text(bot, bot_name, is_running)}\n\n"
         f"{result_icon} {_esc(msg)}",
         parse_mode="HTML",
-        reply_markup=bot_detail_keyboard(bot_name, is_running),
+        reply_markup=bot_detail_keyboard(bot_name, is_running, is_admin=_is_admin(query.from_user.id, context)),
     )
 
 
@@ -153,6 +154,7 @@ async def confirm_delete_handler(update: Update, context: ContextTypes.DEFAULT_T
         registry.remove_bot(bot_name)
     else:
         ok, msg = manager.delete_bot(bot_name)
+    bot_data_backup.delete(bot_name)
     user_registry.remove_bot_from_user(owner_id, bot_name)
     bots = registry.list_bots_by_owner(user_id) if not _is_admin(user_id, context) else registry.list_bots()
     result_icon = pe('check', '✅') if ok else pe('cross', '❌')
@@ -378,7 +380,7 @@ async def cancel_packages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(
         _bot_status_text(bot, bot_name, is_running),
         parse_mode="HTML",
-        reply_markup=bot_detail_keyboard(bot_name, is_running),
+        reply_markup=bot_detail_keyboard(bot_name, is_running, is_admin=_is_admin(query.from_user.id, context)),
     )
     return ConversationHandler.END
 
@@ -416,7 +418,7 @@ async def restart_bot_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     await query.edit_message_text(
         f"{_bot_status_text(bot, bot_name, is_running)}{result_line}",
         parse_mode="HTML",
-        reply_markup=bot_detail_keyboard(bot_name, is_running),
+        reply_markup=bot_detail_keyboard(bot_name, is_running, is_admin=_is_admin(query.from_user.id, context)),
     )
 
 
@@ -467,6 +469,7 @@ async def update_git_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         parse_mode="HTML",
     )
     await wc.stop(worker, bot_name)
+    await bot_data_backup.push_to_worker(wc, worker, bot_name)
     ok, result = await wc.deploy_git(worker, bot_name, git_url, bot.get("display_name", bot_name), bot.get("owner_id", 0))
     if not ok:
         await query.edit_message_text(
@@ -475,13 +478,14 @@ async def update_git_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Назад", callback_data=f"bot_info:{bot_name}")]]),
         )
         return
+    await bot_data_backup.pull_from_worker(wc, worker, bot_name)
     bot = registry.get_bot(bot_name)
     is_running = _is_running(bot, manager)
     await query.edit_message_text(
         f"{pe('check', '✅')} <b>{bot.get('display_name', bot_name)}</b> обновлён!\n\n"
         f"Запустите бота, чтобы применить изменения.",
         parse_mode="HTML",
-        reply_markup=bot_detail_keyboard(bot_name, is_running),
+        reply_markup=bot_detail_keyboard(bot_name, is_running, is_admin=_is_admin(query.from_user.id, context)),
     )
 
 
@@ -529,6 +533,7 @@ async def receive_update_zip(update: Update, context: ContextTypes.DEFAULT_TYPE)
     tg_file = await doc.get_file()
     zip_bytes = bytes(await tg_file.download_as_bytearray())
     await wc.stop(worker, bot_name)
+    await bot_data_backup.push_to_worker(wc, worker, bot_name)
     ok, result = await wc.deploy_zip(worker, bot_name, zip_bytes, bot.get("display_name", bot_name), bot.get("owner_id", 0))
     if not ok:
         await status_msg.edit_text(
@@ -537,12 +542,101 @@ async def receive_update_zip(update: Update, context: ContextTypes.DEFAULT_TYPE)
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Назад", callback_data=f"bot_info:{bot_name}")]]),
         )
         return ConversationHandler.END
+    await bot_data_backup.pull_from_worker(wc, worker, bot_name)
     bot = registry.get_bot(bot_name)
     is_running = _is_running(bot, manager)
     await status_msg.edit_text(
         f"{pe('check', '✅')} <b>{bot.get('display_name', bot_name)}</b> обновлён!\n\n"
         f"Запустите бота, чтобы применить изменения.",
         parse_mode="HTML",
-        reply_markup=bot_detail_keyboard(bot_name, is_running),
+        reply_markup=bot_detail_keyboard(bot_name, is_running, is_admin=_is_admin(update.effective_user.id, context)),
     )
     return ConversationHandler.END
+
+
+# ─── Переназначение воркера (админ) ────────────────────────────────────────────
+async def reassign_worker_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    if not _is_admin(query.from_user.id, context):
+        await query.answer("⛔ Нет доступа.", show_alert=True)
+        return
+    bot_name = query.data.split(":", 1)[1]
+    registry = context.bot_data["registry"]
+    bot = registry.get_bot(bot_name)
+    if not bot:
+        await query.answer("Бот не найден.", show_alert=True)
+        return
+    wr = context.bot_data.get("worker_registry")
+    workers = [w for w in (wr.list_workers() if wr else []) if w["id"] != bot.get("worker_id")]
+    if not workers:
+        await query.answer("Нет других воркеров для переноса.", show_alert=True)
+        return
+    await query.edit_message_text(
+        f"{pe('megaphone', '🖥')} <b>Переназначить воркер</b>\n"
+        f"Бот: <b>{bot.get('display_name', bot_name)}</b>\n"
+        f"Текущий воркер: <code>{bot.get('worker_id', '—')}</code>\n\n"
+        "Выберите новый воркер:",
+        parse_mode="HTML",
+        reply_markup=reassign_worker_keyboard(bot_name, workers),
+    )
+
+
+async def reassign_worker_do(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    if not _is_admin(query.from_user.id, context):
+        await query.answer("⛔ Нет доступа.", show_alert=True)
+        return
+    _, bot_name, new_worker_id = query.data.split(":", 2)
+    registry = context.bot_data["registry"]
+    bot = registry.get_bot(bot_name)
+    if not bot:
+        await query.answer("Бот не найден.", show_alert=True)
+        return
+    wr = context.bot_data.get("worker_registry")
+    new_worker = wr.get_worker(new_worker_id) if wr else None
+    if not new_worker:
+        await query.answer("Воркер не найден.", show_alert=True)
+        return
+
+    await query.edit_message_text(
+        f"{pe('loading', '🔄')} Переношу <b>{bot.get('display_name', bot_name)}</b> "
+        f"на <b>{new_worker['label']}</b>...",
+        parse_mode="HTML",
+    )
+    registry.update_bot(bot_name, worker_id=new_worker_id, status="stopped", pid=None)
+    await bot_data_backup.push_to_worker(wc, new_worker, bot_name)
+
+    git_url = bot.get("git_url")
+    if git_url:
+        ok, result = await wc.deploy_git(
+            new_worker, bot_name, git_url, bot.get("display_name", bot_name), bot.get("owner_id", 0)
+        )
+        if ok:
+            registry.update_bot(bot_name, entry_point=result)
+            await bot_data_backup.pull_from_worker(wc, new_worker, bot_name)
+            await query.edit_message_text(
+                f"{pe('check', '✅')} <b>{bot.get('display_name', bot_name)}</b> перенесён на "
+                f"<b>{new_worker['label']}</b> и передеплоен.\n\n"
+                "Запустите бота, чтобы применить изменения.",
+                parse_mode="HTML",
+                reply_markup=bot_detail_keyboard(bot_name, False, is_admin=True),
+            )
+        else:
+            await query.edit_message_text(
+                f"{pe('cross', '❌')} Воркер переназначен, но деплой не удался:\n"
+                f"<code>{html.escape(result)}</code>\n\n"
+                "БД уже перенесена на новый воркер — попробуйте обновить код ещё раз.",
+                parse_mode="HTML",
+                reply_markup=bot_detail_keyboard(bot_name, False, is_admin=True),
+            )
+    else:
+        await query.edit_message_text(
+            f"{pe('check', '✅')} <b>{bot.get('display_name', bot_name)}</b> переназначен на "
+            f"<b>{new_worker['label']}</b>.\n\n"
+            "БД уже перенесена. Это ZIP-бот — загрузите код заново через "
+            "«Обновить код» → «Загрузить новый ZIP».",
+            parse_mode="HTML",
+            reply_markup=bot_detail_keyboard(bot_name, False, is_admin=True),
+        )

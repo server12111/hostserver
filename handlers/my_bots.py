@@ -67,7 +67,7 @@ async def bot_info_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     status_text = "Запущен" if is_running else "Остановлен"
     source_text = f"🔗 Git" if bot.get("source") == "git" else f"{pe('package', '📦')} ZIP"
     worker_line = ""
-    if bot.get("worker_id"):
+    if bot.get("worker_id") and _is_admin(user_id, context):
         worker_line = f"\n{pe('stats', '🖥')} Воркер: <code>{bot['worker_id']}</code>"
 
     text = (

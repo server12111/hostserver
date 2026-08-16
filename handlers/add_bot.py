@@ -222,7 +222,7 @@ async def _finalize_bot(
 
     if chosen_worker:
         await status_msg.edit_text(
-            f"{pe('loading', '⏳')} Деплою бота <b>{display_name}</b> на <b>{chosen_worker['label']}</b>...",
+            f"{pe('loading', '⏳')} Деплою бота <b>{display_name}</b>...",
             parse_mode="HTML",
         )
         await bot_data_backup.push_to_worker(worker_client, chosen_worker, bot_name)
@@ -258,7 +258,7 @@ async def _finalize_bot(
         await _notify_global_load(context, bots_before_global)
         await status_msg.edit_text(
             f"{pe('celebrate', '🎉')} <b>Бот задеплоен!</b>\n\n"
-            f"<b>{display_name}</b> → {chosen_worker['label']}\n"
+            f"<b>{display_name}</b>\n"
             f"Точка входа: <code>{entry_point}</code>",
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup([

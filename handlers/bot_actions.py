@@ -611,6 +611,12 @@ async def reassign_worker_do(update: Update, context: ContextTypes.DEFAULT_TYPE)
         f"на <b>{new_worker['label']}</b>...",
         parse_mode="HTML",
     )
+    old_worker = _get_worker(bot, context)
+    if old_worker:
+        try:
+            await wc.stop(old_worker, bot_name)
+        except Exception:
+            pass
     registry.update_bot(bot_name, worker_id=new_worker_id, status="stopped", pid=None)
     await bot_data_backup.push_to_worker(wc, new_worker, bot_name)
 

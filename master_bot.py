@@ -40,6 +40,7 @@ from handlers.bot_actions import (
     config_view_handler, config_edit_entry, config_save_handler, cancel_config,
     packages_entry_handler, packages_install_handler, cancel_packages,
     update_bot_handler, update_git_handler, update_zip_entry, receive_update_zip,
+    cancel_update_zip,
     reassign_worker_entry, reassign_worker_do,
     WAITING_PACKAGES, WAITING_CONFIG, WAITING_UPDATE_ZIP,
 )
@@ -512,7 +513,7 @@ def build_app() -> Application:
                 MessageHandler(filters.Document.ALL & ~filters.Document.ZIP, receive_update_zip),
             ],
         },
-        fallbacks=[CallbackQueryHandler(lambda u, c: ConversationHandler.END, pattern="^bot_info:")],
+        fallbacks=[CallbackQueryHandler(cancel_update_zip, pattern="^bot_info:")],
         per_message=False,
     )
 

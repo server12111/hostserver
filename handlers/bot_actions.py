@@ -508,6 +508,12 @@ async def update_zip_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return WAITING_UPDATE_ZIP
 
 
+async def cancel_update_zip(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    from handlers.my_bots import bot_info_handler
+    await bot_info_handler(update, context)
+    return ConversationHandler.END
+
+
 async def receive_update_zip(update: Update, context: ContextTypes.DEFAULT_TYPE):
     bot_name = context.user_data.get("update_for")
     if not bot_name:

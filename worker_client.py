@@ -227,3 +227,16 @@ async def upload_data_backup(worker: dict, bot_name: str, zip_bytes: bytes) -> b
             return r.status == 200
     except Exception:
         return False
+
+
+async def download_code_backup(worker: dict, bot_name: str) -> bytes:
+    """Забирает с воркера компактный бэкап кода бота (без .git/venv/данных), для хранения на главном боте."""
+    try:
+        async with _session() as s:
+            r = await s.get(_url(worker, f"/code_backup/{bot_name}"),
+                            headers=_headers(worker), timeout=_TIMEOUT_LONG)
+            if r.status == 200:
+                return await r.read()
+    except Exception:
+        pass
+    return b""

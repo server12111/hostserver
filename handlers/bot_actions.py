@@ -11,6 +11,7 @@ from keyboards import (
 )
 import worker_client as wc
 import bot_data_backup
+import bot_code_backup
 
 WAITING_UPDATE_ZIP = 40
 
@@ -155,6 +156,7 @@ async def confirm_delete_handler(update: Update, context: ContextTypes.DEFAULT_T
     else:
         ok, msg = manager.delete_bot(bot_name)
     bot_data_backup.delete(bot_name)
+    bot_code_backup.delete(bot_name)
     user_registry.remove_bot_from_user(owner_id, bot_name)
     bots = registry.list_bots_by_owner(user_id) if not _is_admin(user_id, context) else registry.list_bots()
     result_icon = pe('check', '✅') if ok else pe('cross', '❌')
@@ -479,6 +481,7 @@ async def update_git_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )
         return
     await bot_data_backup.pull_from_worker(wc, worker, bot_name)
+    await bot_code_backup.pull_from_worker(wc, worker, bot_name)
     bot = registry.get_bot(bot_name)
     is_running = _is_running(bot, manager)
     await query.edit_message_text(
@@ -549,6 +552,7 @@ async def receive_update_zip(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )
         return ConversationHandler.END
     await bot_data_backup.pull_from_worker(wc, worker, bot_name)
+    await bot_code_backup.pull_from_worker(wc, worker, bot_name)
     bot = registry.get_bot(bot_name)
     is_running = _is_running(bot, manager)
     await status_msg.edit_text(
@@ -643,11 +647,35 @@ async def reassign_worker_do(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 parse_mode="HTML",
                 reply_markup=bot_detail_keyboard(bot_name, False, is_admin=True),
             )
+    elif bot_code_backup.has_backup(bot_name):
+        ok, entry_point = await wc.deploy_zip(
+            new_worker, bot_name, bot_code_backup.load(bot_name),
+            bot.get("display_name", bot_name), bot.get("owner_id", 0),
+        )
+        if ok:
+            registry.update_bot(bot_name, entry_point=entry_point)
+            await bot_data_backup.pull_from_worker(wc, new_worker, bot_name)
+            await bot_code_backup.pull_from_worker(wc, new_worker, bot_name)
+            await query.edit_message_text(
+                f"{pe('check', '✅')} <b>{bot.get('display_name', bot_name)}</b> перенесён на "
+                f"<b>{new_worker['label']}</b> и восстановлен из резервной копии кода.\n\n"
+                "Запустите бота, чтобы применить изменения.",
+                parse_mode="HTML",
+                reply_markup=bot_detail_keyboard(bot_name, False, is_admin=True),
+            )
+        else:
+            await query.edit_message_text(
+                f"{pe('cross', '❌')} Воркер переназначен, но восстановление кода не удалось:\n"
+                f"<code>{html.escape(entry_point)}</code>\n\n"
+                "БД уже перенесена — попробуйте загрузить ZIP вручную через «Обновить код».",
+                parse_mode="HTML",
+                reply_markup=bot_detail_keyboard(bot_name, False, is_admin=True),
+            )
     else:
         await query.edit_message_text(
             f"{pe('check', '✅')} <b>{bot.get('display_name', bot_name)}</b> переназначен на "
             f"<b>{new_worker['label']}</b>.\n\n"
-            "БД уже перенесена. Это ZIP-бот — загрузите код заново через "
+            "БД уже перенесена, но резервной копии кода нет — загрузите код заново через "
             "«Обновить код» → «Загрузить новый ZIP».",
             parse_mode="HTML",
             reply_markup=bot_detail_keyboard(bot_name, False, is_admin=True),

@@ -10,6 +10,7 @@ from telegram.ext import ContextTypes, ConversationHandler
 from keyboards import sanitize_bot_name, make_bot_key, add_source_keyboard, bot_detail_keyboard, pe
 import worker_client
 import bot_data_backup
+import bot_code_backup
 
 WAITING_ZIP = 1
 WAITING_GIT_URL = 2
@@ -236,6 +237,7 @@ async def _finalize_bot(
             )
         if ok:
             await bot_data_backup.pull_from_worker(worker_client, chosen_worker, bot_name)
+            await bot_code_backup.pull_from_worker(worker_client, chosen_worker, bot_name)
         if not ok:
             await status_msg.edit_text(
                 f"{pe('cross', '❌')} <b>Ошибка деплоя:</b>\n<code>{html.escape(entry_point)}</code>",
